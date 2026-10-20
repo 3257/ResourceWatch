@@ -29,7 +29,8 @@ final class Monitor: ObservableObject {
         return lines
     }
     private var miniPanel: MiniPanelController?
-    var menuBarSymbol: String { samplingError != nil || !currentWarnings.isEmpty ? "exclamationmark.triangle.fill" : "waveform.path.ecg" }
+    var hasWarning: Bool { !warningSummary.isEmpty }
+    let menuBarSymbol = "waveform.path.ecg"
     var menuBarStats: String {
         guard let latest else { return "…" }
         let ram = latest.memoryTotal > 0 ? Double(latest.memoryUsed) / Double(latest.memoryTotal) * 100 : 0
@@ -178,9 +179,9 @@ struct ResourceWatchApp: App {
                 Button("Quit ResourceWatch") { NSApplication.shared.terminate(nil) }.keyboardShortcut("q")
         } label: {
             HStack(spacing: 4) {
-                Image(systemName: monitor.menuBarSymbol)
+                StatusIconView(hasWarning: monitor.hasWarning)
                 if monitor.settings.showMenuBarStats { Text(monitor.menuBarStats).monospacedDigit() }
-            }.accessibilityLabel("ResourceWatch\(monitor.currentWarnings.isEmpty ? "" : ", warning"): \(monitor.menuBarStats)")
+            }.accessibilityLabel("ResourceWatch\(monitor.hasWarning ? ", warning" : ""): \(monitor.menuBarStats)")
         }.menuBarExtraStyle(.menu)
         Window("ResourceWatch Settings", id: "settings") {
                 Form {

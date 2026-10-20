@@ -35,3 +35,9 @@ Home volume only; physical `en*` network interfaces only; no folder/network-proc
 - Added a top-level Current warnings section with CPU readings/thresholds, process names and usage, memory pressure, storage free space, network rates and the distinct rapid-storage-growth reason. Warning rows open the mini panel.
 - Regression test verifies displayed readings and culprit names for simultaneous conditions and removal after recovery. Sixteen tests and the release build passed.
 - Launched the standalone updated app and inspected its native menu. CPU had recovered to 10.4%, and the warning section was correctly absent; active-condition text was verified by the regression test without generating system pressure.
+
+## Pulse status dot
+
+- Kept the pulse glyph in normal and warning states, adding a red dot during warnings or collection errors. Recovery removes the dot. The same icon width is reserved in both states.
+- Full-color non-template rendering preserves the badge color. Appearance is read in the menu bar label view.
+- Pixel regression checks verify an opaque red badge during warnings and a transparent badge area otherwise, in both light and dark variants. Seventeen tests and the release build passed; updated app launched locally.

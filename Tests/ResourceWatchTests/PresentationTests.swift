@@ -1,6 +1,28 @@
 import Foundation
 import Testing
+import AppKit
 @testable import ResourceWatch
+
+@Test @MainActor func statusIconKeepsPulseAndUsesColoredWarningDot() throws {
+    for dark in [false, true] {
+        let normal = StatusIcon.make(hasWarning: false, dark: dark)
+        let warning = StatusIcon.make(hasWarning: true, dark: dark)
+        #expect(normal.size == warning.size)
+        #expect(!warning.isTemplate)
+        let normalData = try #require(normal.tiffRepresentation)
+        let warningData = try #require(warning.tiffRepresentation)
+        let normalBitmap = try #require(NSBitmapImageRep(data: normalData))
+        let warningBitmap = try #require(NSBitmapImageRep(data: warningData))
+        func badgeColor(_ bitmap: NSBitmapImageRep) throws -> NSColor {
+            let x = Int(Double(bitmap.pixelsWide) * 23.5 / 26)
+            let y = bitmap.pixelsHigh / 2
+            return try #require(bitmap.colorAt(x: x, y: y)?.usingColorSpace(.deviceRGB))
+        }
+        let clear = try badgeColor(normalBitmap), red = try badgeColor(warningBitmap)
+        #expect(clear.alphaComponent < 0.1)
+        #expect(red.alphaComponent > 0.9 && red.redComponent > 0.7 && red.greenComponent < 0.5)
+    }
+}
 
 @Test func warningSummaryExplainsNumbersAndResponsibleProcesses() {
     var m = Metrics(cpu: 90, pressure: 4, swap: 0, free: 10_000_000_000, total: 1_000_000_000_000, processes: "")

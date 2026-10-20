@@ -41,7 +41,7 @@ After pulling updates, run `bash build.sh` again and replace your installed copy
 
 Build with `bash build.sh`, then `open dist/ResourceWatch.app`. Open its pulse icon menu and choose **Enable notifications**. macOS notification settings and Focus modes can suppress delivery. The app must remain running; login launch is not installed automatically.
 
-The pulse icon becomes a warning triangle when current metrics exceed configured thresholds or sampling fails; it returns to the pulse after recovery. Visual warnings appear on the current sample, while notifications wait for the configured sustained duration. In Settings, **Show CPU and RAM in menu bar** adds compact live percentages beside the icon (off by default).
+The pulse icon stays in place and gains a small red status dot when current metrics exceed configured thresholds or sampling fails; the dot disappears after recovery. The icon reserves the same space in both states, and adapts to light/dark appearance. Visual warnings appear on the current sample, while notifications wait for the configured sustained duration. In Settings, **Show CPU and RAM in menu bar** adds compact live percentages beside the icon (off by default).
 
 When a warning is active, **Current warnings** appears at the top of the menu with the reason, current readings and responsible process names where available. For example: `CPU 90% — above 85%` or `FixtureCompiler: 500% CPU (one core = 100%)`. Storage growth is distinguished from low free space. Click a warning to open the mini panel; recovered warnings disappear from this section while past notifications remain under **Recent alerts**.
 
