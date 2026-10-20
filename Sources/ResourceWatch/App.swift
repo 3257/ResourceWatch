@@ -21,6 +21,13 @@ final class Monitor: ObservableObject {
     @Published var cpuHistory: [Double] = []
     @Published var currentWarnings: [String] = []
     @Published var samplingError: String?
+    var warningSummary: [String] {
+        if let samplingError { return ["Monitoring unavailable: \(samplingError)"] }
+        guard let latest else { return [] }
+        var lines = HealthSummary.warningDetails(latest, settings: settings)
+        if currentWarnings.contains("Storage growing quickly") { lines.append(String(format: "Storage fell by over %.0f GB within an hour", settings.diskGrowthGB)) }
+        return lines
+    }
     private var miniPanel: MiniPanelController?
     var menuBarSymbol: String { samplingError != nil || !currentWarnings.isEmpty ? "exclamationmark.triangle.fill" : "waveform.path.ecg" }
     var menuBarStats: String {
@@ -124,7 +131,16 @@ struct ResourceWatchApp: App {
     var body: some Scene {
         MenuBarExtra {
                 Text("ResourceWatch").font(.headline)
-                if let error = monitor.samplingError { Text("Monitoring error: \(error)") }
+                if !monitor.warningSummary.isEmpty {
+                    Section("Current warnings") {
+                        ForEach(Array(monitor.warningSummary.enumerated()), id: \.offset) { _, warning in
+                            Button { monitor.showMiniPanel() } label: {
+                                Label(warning, systemImage: "exclamationmark.triangle.fill")
+                            }
+                        }
+                    }
+                    Divider()
+                }
                 Button("Show mini panel") { monitor.showMiniPanel() }
                 Divider()
                 ForEach(Array(monitor.details.components(separatedBy: "\n").prefix(4).enumerated()), id: \.offset) { _, line in

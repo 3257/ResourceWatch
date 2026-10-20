@@ -2,6 +2,21 @@ import Foundation
 import Testing
 @testable import ResourceWatch
 
+@Test func warningSummaryExplainsNumbersAndResponsibleProcesses() {
+    var m = Metrics(cpu: 90, pressure: 4, swap: 0, free: 10_000_000_000, total: 1_000_000_000_000, processes: "")
+    m.processSamples = [ProcessSample(identity: "12:0:0", name: "FixtureCompiler", cpu: 500, memory: 9 << 30)]
+    m.network.upload = 30_000_000
+    let details = HealthSummary.warningDetails(m, settings: WatchSettings())
+    #expect(details.contains("CPU 90% — above 85%"))
+    #expect(details.contains("FixtureCompiler: 500% CPU (one core = 100%)"))
+    #expect(details.contains("FixtureCompiler: 9.0 GiB RAM"))
+    #expect(details.contains("Critical memory pressure"))
+    #expect(details.contains("Low storage: 10.0 GB free (1%)"))
+    #expect(details.contains("Network: ↓ 0.0 / ↑ 30.0 MB/s"))
+    m.cpu = 0; m.pressure = 1; m.free = 200_000_000_000; m.processSamples = []; m.network.upload = 0
+    #expect(HealthSummary.warningDetails(m, settings: WatchSettings()).isEmpty)
+}
+
 @Test func warningStateTracksCurrentConditionsAndRecovery() {
     var m = Metrics(cpu: 10, pressure: 1, swap: 8 << 30, free: 200_000_000_000, total: 1_000_000_000_000, processes: "")
     #expect(HealthSummary.warnings(m, settings: WatchSettings()).isEmpty)

@@ -43,6 +43,8 @@ Build with `bash build.sh`, then `open dist/ResourceWatch.app`. Open its pulse i
 
 The pulse icon becomes a warning triangle when current metrics exceed configured thresholds or sampling fails; it returns to the pulse after recovery. Visual warnings appear on the current sample, while notifications wait for the configured sustained duration. In Settings, **Show CPU and RAM in menu bar** adds compact live percentages beside the icon (off by default).
 
+When a warning is active, **Current warnings** appears at the top of the menu with the reason, current readings and responsible process names where available. For example: `CPU 90% — above 85%` or `FixtureCompiler: 500% CPU (one core = 100%)`. Storage growth is distinguished from low free space. Click a warning to open the mini panel; recovered warnings disappear from this section while past notifications remain under **Recent alerts**.
+
 Choose **Show mini panel** for a small floating dashboard with CPU, memory, network and storage tiles plus up to ten minutes of CPU history. Click a tile for details and click it again to collapse. The pin button toggles staying above other windows. Closing the panel leaves monitoring running. This is a live app panel, not a macOS WidgetKit desktop widget, and shares the existing ten-second sampler.
 
 Samples every ten seconds, off the UI thread:

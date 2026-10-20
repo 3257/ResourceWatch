@@ -29,3 +29,9 @@ Home volume only; physical `en*` network interfaces only; no folder/network-proc
 - Actual CPU, Memory, Network and Storage tile actions exercised through Accessibility; each corresponding detail heading appeared. Details collapsed afterward.
 - Pin action verified against Core Graphics window layer: floating 3 → normal 0 → floating 3. Restored pinned.
 - Fifteen tests passed; release build passed. Panel close is independent of the app's monitor owner.
+
+## Inline warning summaries
+
+- Added a top-level Current warnings section with CPU readings/thresholds, process names and usage, memory pressure, storage free space, network rates and the distinct rapid-storage-growth reason. Warning rows open the mini panel.
+- Regression test verifies displayed readings and culprit names for simultaneous conditions and removal after recovery. Sixteen tests and the release build passed.
+- Launched the standalone updated app and inspected its native menu. CPU had recovered to 10.4%, and the warning section was correctly absent; active-condition text was verified by the regression test without generating system pressure.
