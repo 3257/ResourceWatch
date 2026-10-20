@@ -4,6 +4,18 @@ Standalone macOS menu bar monitor. Swift 6, macOS 14+, no dependencies, network 
 
 Free and open source under the [MIT license](LICENSE). No account, API key, subscription or hosted service is required.
 
+## Screenshots
+
+### Live mini panel
+
+<img src="docs/screenshots/dashboard.png" width="340" alt="ResourceWatch mini panel with CPU, memory, network and free storage tiles, a CPU history graph and a pin control">
+
+### Alert thresholds
+
+<img src="docs/screenshots/settings.png" width="360" alt="ResourceWatch Settings with sliders for CPU, process memory, free storage, storage growth, network traffic, sustained duration and cooldown">
+
+Actual app captures with example live readings and selected thresholds. Click a metric tile for details; adjust the sliders to suit your Mac.
+
 ## Install and run
 
 Requirements: a Mac running macOS 14 or later, Git, and Xcode 16 or later (or Command Line Tools providing Swift 6). The current implementation was tested on Apple Silicon; Intel has not been validated.
@@ -69,6 +81,6 @@ Code is in `Sources/ResourceWatch`; regression tests are in `Tests/ResourceWatch
 
 ## Privacy
 
-Metrics stay on the Mac. There is no telemetry, backend, packet capture, destination inspection or credential access. Process inspection collects executable names, PIDs, CPU counters and resident sizes, not command arguments or environments. Notifications can include executable names; their visibility follows your macOS notification settings. Settings are stored in local UserDefaults; short metric history and recent alerts live in memory. No credentials, raw diagnostic logs, screenshots, build products or machine-specific configuration are needed in this repository.
+Metrics stay on the Mac. There is no telemetry, backend, packet capture, destination inspection or credential access. Process inspection collects executable names, PIDs, CPU counters and resident sizes, not command arguments or environments. Notifications can include executable names; their visibility follows your macOS notification settings. Settings are stored in local UserDefaults; short metric history and recent alerts live in memory. No credentials, raw diagnostic logs, build products or machine-specific configuration are needed in this repository. Documentation screenshots show only app windows with aggregate metrics and settings, without desktop content or process details.
 
 Implementation references: [Apple memory pressure sysctl conversion](https://github.com/apple-oss-distributions/xnu/blob/main/bsd/kern/kern_memorystatus_notify.c), [login startup](https://developer.apple.com/documentation/servicemanagement/smappservice/mainapp), [notification presentation](https://developer.apple.com/documentation/usernotifications/unusernotificationcenterdelegate/usernotificationcenter(_:willpresent:withcompletionhandler:)).
