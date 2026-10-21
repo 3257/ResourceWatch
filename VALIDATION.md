@@ -41,3 +41,10 @@ Home volume only; physical `en*` network interfaces only; no folder/network-proc
 - Kept the pulse glyph in normal and warning states, adding a red dot during warnings or collection errors. Recovery removes the dot. The same icon width is reserved in both states.
 - Full-color non-template rendering preserves the badge color. Appearance is read in the menu bar label view.
 - Pixel regression checks verify an opaque red badge during warnings and a transparent badge area otherwise, in both light and dark variants. Seventeen tests and the release build passed; updated app launched locally.
+
+## App and notification icon — 2026-10-21
+
+- Added original vector pulse/status-dot artwork on a blue rounded tile. AppKit generates the PNG preview and native iconset; `iconutil` creates the ICNS during every app build.
+- Verified ICNS header/length and standard/Retina representations, the bundle's CFBundleIconFile resource, and strict code-signature validation. Packaging version is 0.1.1 (build 2).
+- Refreshed only this app's Launch Services registration and restarted the rebuilt app. NSWorkspace resolved the new artwork instead of a generic app icon; its rendered result was visually inspected.
+- Sent a test through Settings; the running app confirmed delivery to Notification Center. OS icon resolution and delivery were verified separately; no personal notification content was captured or published.

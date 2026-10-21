@@ -1,5 +1,7 @@
 # ResourceWatch
 
+<img src="docs/screenshots/app-icon.png" width="80" alt="ResourceWatch app icon: a white pulse and red status dot on a deep blue rounded tile">
+
 Standalone macOS menu bar monitor. Swift 6, macOS 14+, no dependencies, network calls, administrator access, automatic process termination, or disk deletion.
 
 Free and open source under the [MIT license](LICENSE). No account, API key, subscription or hosted service is required.
@@ -80,6 +82,8 @@ git diff --check
 ```
 
 Code is in `Sources/ResourceWatch`; regression tests are in `Tests/ResourceWatchTests`. [VALIDATION.md](VALIDATION.md) describes recorded checks and limitations. The ignored `.build` folder is a disposable SwiftPM cache; `dist` contains local app bundles. Neither belongs in a source commit.
+
+`scripts/generate_icon.swift` contains the original vector artwork and generates every macOS icon size using AppKit and `iconutil`. `build.sh` embeds the resulting `AppIcon.icns` and declares it in the bundle metadata, including for macOS notifications. The static app icon uses a red brand dot; the separate menu bar dot still reflects live warnings.
 
 ## Privacy
 
