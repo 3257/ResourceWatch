@@ -48,3 +48,9 @@ Home volume only; physical `en*` network interfaces only; no folder/network-proc
 - Verified ICNS header/length and standard/Retina representations, the bundle's CFBundleIconFile resource, and strict code-signature validation. Packaging version is 0.1.1 (build 2).
 - Refreshed only this app's Launch Services registration and restarted the rebuilt app. NSWorkspace resolved the new artwork instead of a generic app icon; its rendered result was visually inspected.
 - Sent a test through Settings; the running app confirmed delivery to Notification Center. OS icon resolution and delivery were verified separately; no personal notification content was captured or published.
+
+### Notification placeholder follow-up
+
+The user subsequently confirmed the notification still showed a placeholder, so the ICNS/Finder and delivery checks above did **not** prove correct notification rendering. Removing the stale old-app registration and restarting Notification Center also did not resolve the reported issue.
+
+Added a compiled AppIcon asset catalog, declared CFBundleIconName alongside CFBundleIconFile, and bumped the bundle to 0.1.2 (build 3). Verified 11 named AppIcon renditions in Assets.car, the asset compiler's metadata, strict signing and all 17 tests. Reloaded the per-user notification services without deleting preferences/history, launched the new build and sent a distinctly titled **ResourceWatch test — 0.1.2**. Visual confirmation of that new notification is pending; this remains an unconfirmed fix.

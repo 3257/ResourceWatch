@@ -47,6 +47,24 @@ for size in [16, 32, 128, 256, 512] {
     }
 }
 try render(1024).write(to: output.appendingPathComponent("AppIcon.png"))
+// Icon Services/Notification Center can use the named asset, independently of
+// Finder's legacy ICNS lookup. Supply both forms from the same original artwork.
+let catalog = output.appendingPathComponent("Assets.xcassets", isDirectory: true)
+let appIcon = catalog.appendingPathComponent("AppIcon.appiconset", isDirectory: true)
+try FileManager.default.createDirectory(at: appIcon, withIntermediateDirectories: true)
+let catalogInfo: [String: Any] = ["info": ["author": "xcode", "version": 1]]
+try JSONSerialization.data(withJSONObject: catalogInfo, options: [.prettyPrinted, .sortedKeys]).write(to: catalog.appendingPathComponent("Contents.json"))
+var images: [[String: String]] = []
+for size in [16, 32, 128, 256, 512] {
+    for factor in [1, 2] {
+        let suffix = factor == 1 ? "" : "@2x"
+        let name = "icon_\(size)x\(size)\(suffix).png"
+        try Data(contentsOf: iconset.appendingPathComponent(name)).write(to: appIcon.appendingPathComponent(name))
+        images.append(["idiom": "mac", "size": "\(size)x\(size)", "scale": "\(factor)x", "filename": name])
+    }
+}
+let contents: [String: Any] = ["images": images, "info": ["author": "xcode", "version": 1]]
+try JSONSerialization.data(withJSONObject: contents, options: [.prettyPrinted, .sortedKeys]).write(to: appIcon.appendingPathComponent("Contents.json"))
 let process = Process()
 process.executableURL = URL(fileURLWithPath: "/usr/bin/iconutil")
 process.arguments = ["-c", "icns", iconset.path, "-o", output.appendingPathComponent("AppIcon.icns").path]

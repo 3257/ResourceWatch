@@ -63,7 +63,8 @@ final class Monitor: ObservableObject {
         } catch { loginStatus = error.localizedDescription }
     }
     func testNotification() {
-        send("ResourceWatch test", "CPU, memory, network and storage alerts will appear here.", verify: true)
+        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "development"
+        send("ResourceWatch test — \(version)", "CPU, memory, network and storage alerts will appear here.", verify: true)
     }
     func enableNotifications() {
         Task {
