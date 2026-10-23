@@ -2,7 +2,7 @@
 
 <img src="docs/screenshots/app-icon.png" width="80" alt="ResourceWatch app icon: a white pulse and red status dot on a deep blue rounded tile">
 
-Standalone macOS menu bar monitor. Swift 6, macOS 14+, no dependencies, network calls, administrator access, automatic process termination, or disk deletion.
+Standalone macOS menu bar monitor. Swift 6, macOS 14+, no dependencies, network calls, administrator access, automatic process termination, or automatic file deletion.
 
 Free and open source under the [MIT license](LICENSE). No account, API key, subscription or hosted service is required.
 
@@ -18,7 +18,7 @@ Free and open source under the [MIT license](LICENSE). No account, API key, subs
 
 ### Storage cleanup and growth
 
-<img src="docs/screenshots/storage-cleanup.png" width="720" alt="Storage cleanup submenu with a Growing now folder that grew 1.3 GB in the last hour, its details with Reveal in Finder and Ask AI in Terminal, and the largest cleanup items such as Xcode DerivedData and simulator devices">
+<img src="docs/screenshots/storage-cleanup.png" width="720" alt="Storage cleanup submenu with a Growing now folder that grew 1.3 GB in the last hour, its details with Show in Finder and Ask AI in Terminal, and the largest cleanup items such as Xcode DerivedData and simulator devices">
 
 ### Mini panel suggestions
 
@@ -63,12 +63,13 @@ When a warning is active, **Current warnings** appears at the top of the menu wi
 
 **Suggestions** appears below the warnings and states what to do. ResourceWatch groups helper processes under their app, so a warning names the app and not one helper. For example: `Google Chrome: 11.2 GiB RAM in 34 processes`. Each suggestion opens a submenu with the largest process, a tip and one or more actions:
 
-- **Bring app to front**, **Open Activity Monitor**, **Reveal in Finder**.
+- **Bring app to front**, **Open Activity Monitor**, **Show in Finder**.
+- **Move to Trash…**: offered only for folders that their tools recreate, such as DerivedData, DeviceSupport and package-manager caches, and for orphaned DerivedData folders. A dialog names every item first, and **Cancel** is the default button. Archives, simulators, worktrees, backups, Downloads and growing folders are never offered; they need their own tool or your own choice. In the mini panel, click a cleanup item to choose **Show in Finder** or **Move to Trash…**.
 - **Copy command**: copies a cleanup command, such as `xcrun simctl delete unavailable` or `git -C … worktree remove …`, to the clipboard. You paste it into Terminal and run it yourself.
 
 **Ask AI in Terminal** (menu) or **Ask AI** (mini panel) sends a suggestion to an AI coding CLI. ResourceWatch detects Claude Code (`claude`), Codex (`codex`), OpenCode (`opencode --prompt`) and Gemini CLI (`gemini -i`) through your login shell's `PATH` at launch, and lists only the installed ones. The app opens a `.command` file with your default terminal app. The agent starts an interactive session in your login shell, with the suggestion, your Mac's memory and storage readings, and a rule to ask before it deletes files or stops processes. Worktree suggestions start in the worktree folder; other suggestions start in your home folder. The terminal opens a new window, or a new tab when **System Settings → Desktop & Dock → Prefer tabs when opening documents** is **Always**. No Automation or Accessibility permission is needed.
 
-ResourceWatch never deletes files and never quits apps. Summed resident memory counts shared pages once per process, so app totals are approximate. macOS does not tell other apps which browser tab owns a process; for Chromium browsers the tip points to the browser's Task Manager (Shift+Esc).
+ResourceWatch never quits apps, never empties the Trash, and moves files to the Trash only after you confirm. Summed resident memory counts shared pages once per process, so app totals are approximate. macOS does not tell other apps which browser tab owns a process; for Chromium browsers the tip points to the browser's Task Manager (Shift+Esc).
 
 The **Storage cleanup** submenu lists items of 1 GB or more, largest first:
 

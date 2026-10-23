@@ -6,13 +6,15 @@ struct Recommendation: Identifiable, Equatable, Sendable {
         case copy(String)
         case activate(Int32)
         case openActivityMonitor
+        case moveToTrash(title: String, paths: [String])
 
         var title: String {
             switch self {
-            case .reveal: "Reveal in Finder"
+            case .reveal: "Show in Finder"
             case .copy: "Copy command"
             case .activate: "Bring app to front"
             case .openActivityMonitor: "Open Activity Monitor"
+            case .moveToTrash: "Move to Trash…"
             }
         }
     }

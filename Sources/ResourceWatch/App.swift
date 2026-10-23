@@ -188,7 +188,33 @@ final class Monitor: ObservableObject {
         case .copy(let command): NSPasteboard.general.clearContents(); NSPasteboard.general.setString(command, forType: .string)
         case .activate(let pid): NSRunningApplication(processIdentifier: pid)?.activate()
         case .openActivityMonitor: NSWorkspace.shared.open(URL(fileURLWithPath: "/System/Applications/Utilities/Activity Monitor.app"))
+        case .moveToTrash(let title, let paths): confirmTrash(title: title, paths: paths)
         }
+    }
+    private func confirmTrash(title: String, paths: [String]) {
+        guard TrashPolicy.allows(paths) else {
+            events.insert("Did not move \(title) to the Trash\nThe path is outside the allowed folders.", at: 0)
+            return
+        }
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = "Move \(title) to the Trash?"
+        alert.informativeText = "ResourceWatch moves these items to the Trash:\n\n" + paths.map { ($0 as NSString).abbreviatingWithTildeInPath }.joined(separator: "\n")
+            + "\n\nQuit apps that use them first, such as Xcode. You can restore the items from the Trash until you empty it."
+        let move = alert.addButton(withTitle: "Move to Trash")
+        move.hasDestructiveAction = true
+        move.keyEquivalent = ""
+        alert.addButton(withTitle: "Cancel").keyEquivalent = "\r"
+        NSApp.activate(ignoringOtherApps: true)
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        var failures: [String] = []
+        for path in paths {
+            do { try FileManager.default.trashItem(at: URL(fileURLWithPath: path), resultingItemURL: nil) } catch { failures.append("\((path as NSString).abbreviatingWithTildeInPath): \(error.localizedDescription)") }
+        }
+        let now = Date().formatted(date: .omitted, time: .shortened)
+        events.insert(failures.isEmpty ? "\(now) — Moved \(title) to the Trash" : "\(now) — Could not move all of \(title) to the Trash\n" + failures.joined(separator: "\n"), at: 0)
+        lastStorageScan = nil
+        scanStorage(trigger: .daily)
     }
     private func send(_ title: String, _ body: String, verify: Bool = false) {
         let content = UNMutableNotificationContent(); content.title = title; content.body = body; content.sound = .default
@@ -237,24 +263,24 @@ struct ResourceWatchApp: App {
                     }
                     Divider()
                 }
-                Button("Show mini panel") { monitor.showMiniPanel() }
+                Button("Show mini panel", systemImage: "macwindow") { monitor.showMiniPanel() }
                 Divider()
                 ForEach(Array(monitor.details.components(separatedBy: "\n").prefix(4).enumerated()), id: \.offset) { _, line in
                     Text(line)
                 }
-                Menu(monitor.memorySummary) {
+                Menu(monitor.memorySummary, systemImage: "memorychip") {
                     Text(monitor.memoryDetails)
                     Text("Used RAM is an estimate; alerts follow memory pressure")
                     Divider()
                     ForEach(Array(monitor.memoryProcesses.enumerated()), id: \.offset) { _, line in Text(line) }
                     Text("Process memory = resident size, not app footprint")
                 }
-                Menu(monitor.networkSummary) {
+                Menu(monitor.networkSummary, systemImage: "network") {
                     ForEach(Array(monitor.networkDetails.enumerated()), id: \.offset) { _, line in Text(line) }
                 }
-                Menu(monitor.storageCleanupSummary) {
+                Menu(monitor.storageCleanupSummary, systemImage: "internaldrive") {
                     if monitor.isScanning { Text("Scanning…") } else if let last = monitor.lastStorageScan { Text("Last scanned \(last.formatted(date: .omitted, time: .shortened))") }
-                    Button("Scan now") { monitor.scanStorage(trigger: .manual) }.disabled(monitor.isScanning)
+                    Button("Scan now", systemImage: "arrow.clockwise") { monitor.scanStorage(trigger: .manual) }.disabled(monitor.isScanning)
                     if !monitor.growthAdvice.isEmpty {
                         Divider()
                         Text("Growing now: +\(StorageAdvisor.format(monitor.growthReport.total)) in your home folder in the last hour")
@@ -263,10 +289,10 @@ struct ResourceWatchApp: App {
                     if !monitor.storageAdvice.isEmpty { Divider() }
                     ForEach(monitor.storageAdvice) { RecommendationMenu(recommendation: $0, monitor: monitor) }
                 }
-                Menu("Top processes") {
+                Menu("Top processes", systemImage: "list.number") {
                     ForEach(Array(monitor.details.components(separatedBy: "\n").dropFirst(6).enumerated()), id: \.offset) { _, line in Text(line) }
                 }
-                Menu("Recent alerts") {
+                Menu("Recent alerts", systemImage: "bell") {
                     if monitor.events.isEmpty { Text("No alerts this session") }
                     ForEach(Array(monitor.events.enumerated()), id: \.offset) { _, event in
                         Menu(event.components(separatedBy: "\n")[0]) {
@@ -275,14 +301,14 @@ struct ResourceWatchApp: App {
                     }
                 }
                 Divider()
-                Button("Enable notifications") { monitor.enableNotifications() }
+                Button("Enable notifications", systemImage: "bell.badge") { monitor.enableNotifications() }
                     .accessibilityLabel("Enable notifications").accessibilityIdentifier("enableNotifications")
-                Button("Send test notification") { monitor.testNotification() }
+                Button("Send test notification", systemImage: "paperplane") { monitor.testNotification() }
                     .accessibilityLabel("Send test notification").accessibilityIdentifier("testNotification")
-                Button("Settings…") { openWindow(id: "settings"); NSApp.activate(ignoringOtherApps: true) }.keyboardShortcut(",")
-                Button("Open Activity Monitor") { NSWorkspace.shared.open(URL(fileURLWithPath: "/System/Applications/Utilities/Activity Monitor.app")) }
+                Button("Settings…", systemImage: "gearshape") { openWindow(id: "settings"); NSApp.activate(ignoringOtherApps: true) }.keyboardShortcut(",")
+                Button("Open Activity Monitor", systemImage: "gauge.with.dots.needle.33percent") { NSWorkspace.shared.open(URL(fileURLWithPath: "/System/Applications/Utilities/Activity Monitor.app")) }
                 Divider()
-                Button("Quit ResourceWatch") { NSApplication.shared.terminate(nil) }.keyboardShortcut("q")
+                Button("Quit ResourceWatch", systemImage: "power") { NSApplication.shared.terminate(nil) }.keyboardShortcut("q")
         } label: {
             HStack(spacing: 4) {
                 StatusIconView(hasWarning: monitor.hasWarning)
@@ -326,32 +352,6 @@ struct ResourceWatchApp: App {
                     }
                 }.formStyle(.grouped).frame(width: 450, height: 680).task { monitor.refreshPermission() }
         }.windowResizability(.contentSize)
-    }
-}
-
-private struct RecommendationMenu: View {
-    let recommendation: Recommendation
-    let monitor: Monitor
-    var body: some View {
-        Menu(recommendation.title) {
-            ForEach(recommendation.detail, id: \.self) { Text($0) }
-            Divider()
-            ForEach(recommendation.actions.filter(\.isAvailable), id: \.self) { action in
-                Button(action.title) { monitor.perform(action) }
-            }
-            if !monitor.agents.isEmpty {
-                Menu("Ask AI in Terminal") {
-                    ForEach(monitor.agents, id: \.self) { agent in Button(agent.name) { monitor.ask(agent, about: recommendation) } }
-                }
-            }
-        }
-    }
-}
-
-extension Recommendation.Action {
-    var isAvailable: Bool {
-        if case .activate(let pid) = self { return NSRunningApplication(processIdentifier: pid) != nil }
-        return true
     }
 }
 

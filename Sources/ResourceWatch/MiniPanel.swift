@@ -81,7 +81,7 @@ private struct MiniPanelView: View {
     @ViewBuilder private func details(_ metric: Metric, _ m: Metrics) -> some View {
         VStack(alignment: .leading, spacing: 5) {
             Divider()
-            Text(metric.rawValue + " details").font(.caption.bold())
+            Text(metric.rawValue + " details").font(.subheadline.weight(.semibold))
             switch metric {
             case .cpu: Text(m.processes).font(.caption2)
             case .memory:
@@ -91,14 +91,33 @@ private struct MiniPanelView: View {
             case .network:
                 ForEach(Array(monitor.networkDetails.enumerated()), id: \.offset) { _, row in Text(row).font(.caption2) }
             case .storage:
-                Text(String(format: "%.1f / %.1f GB free", Double(m.free) / 1e9, Double(m.total) / 1e9)).font(.caption2)
+                Text(String(format: "%.1f of %.1f GB free", Double(m.free) / 1e9, Double(m.total) / 1e9)).font(.callout)
                 if !monitor.growthAdvice.isEmpty {
-                    Text("Growing in the last hour").font(.caption2.bold())
-                    ForEach(monitor.growthAdvice.prefix(3)) { Text($0.title).font(.caption2) }
-                    Text("Largest cleanup items").font(.caption2.bold())
+                    SectionHeader("Growing in the last hour")
+                    ForEach(monitor.growthAdvice.prefix(3)) { item in
+                        let parts = Headline(item.title)
+                        Menu {
+                            ForEach(item.actions.filter { if case .reveal = $0 { true } else { false } }, id: \.self) { action in
+                                Button(action.title, systemImage: action.symbol) { monitor.perform(action) }
+                            }
+                        } label: {
+                            ValueRow(symbol: "arrow.up.right", tint: .orange, name: parts.name, value: parts.value?.replacing(" in the last hour", with: "") ?? "", options: true)
+                        }.menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden)
+                    }
                 }
-                ForEach(monitor.storageAdvice.prefix(3)) { Text($0.title).font(.caption2) }
-                Text(monitor.storageAdvice.isEmpty ? "No cleanup over 1 GB found yet. Use Storage cleanup in the menu." : "Storage cleanup in the menu has actions.").font(.caption2).foregroundStyle(.secondary)
+                SectionHeader("Largest cleanup items")
+                if monitor.storageAdvice.isEmpty { Text(monitor.isScanning ? "Scanning…" : "Nothing over 1 GB found yet.").font(.caption).foregroundStyle(.secondary) }
+                ForEach(monitor.storageAdvice.prefix(3)) { item in
+                    let parts = Headline(item.title)
+                    Menu {
+                        ForEach(item.actions.filter { if case .copy = $0 { false } else { true } }, id: \.self) { action in
+                            Button(action.title, systemImage: action.symbol) { monitor.perform(action) }
+                        }
+                    } label: {
+                        ValueRow(symbol: "folder", tint: .secondary, name: parts.name, value: parts.value ?? "", options: true)
+                    }.menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).accessibilityIdentifier("cleanup-\(item.id)")
+                }
+                Text("Click an item to show it in Finder or move it to the Trash. The menu has more options.").font(.caption).foregroundStyle(.secondary)
             }
         }.textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
     }
@@ -115,18 +134,29 @@ private struct SuggestionList: View {
     @State private var expanded: Set<String> = []
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Suggestions").font(.caption.bold())
+            Text("Suggestions").font(.subheadline.weight(.semibold))
             ForEach(suggestions.prefix(3)) { suggestion in
-                VStack(alignment: .leading, spacing: 3) {
+                let open = expanded.contains(suggestion.id), parts = Headline(suggestion.title)
+                VStack(alignment: .leading, spacing: 8) {
                     // Collapsed by default so several suggestions fit on screen; the menu always shows the full text.
                     Button { toggle(suggestion.id) } label: {
-                        Label(suggestion.title, systemImage: expanded.contains(suggestion.id) ? "chevron.down" : "chevron.right")
-                            .font(.caption).multilineTextAlignment(.leading).fixedSize(horizontal: false, vertical: true)
-                    }.buttonStyle(.plain).accessibilityHint(expanded.contains(suggestion.id) ? "Hide details" : "Show details")
+                        HStack(alignment: .firstTextBaseline, spacing: 8) {
+                            Image(systemName: suggestion.symbol).foregroundStyle(.orange)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(parts.name).font(.callout.weight(.semibold))
+                                if let value = parts.value { Text(value).font(.caption).foregroundStyle(.secondary) }
+                            }.multilineTextAlignment(.leading).fixedSize(horizontal: false, vertical: true)
+                            Spacer(minLength: 4)
+                            Image(systemName: "chevron.right").rotationEffect(.degrees(open ? 90 : 0)).foregroundStyle(.secondary)
+                        }.contentShape(.rect)
+                    }.buttonStyle(.plain).accessibilityHint(open ? "Hide details" : "Show details")
                         .accessibilityIdentifier("suggestion-\(suggestion.id)")
-                    if expanded.contains(suggestion.id) {
-                        Text(suggestion.detail.filter { !$0.hasPrefix("Command: ") }.joined(separator: "\n")).font(.caption2).foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
+                    if open {
+                        VStack(alignment: .leading, spacing: 4) {
+                            ForEach(suggestion.detail.filter { !$0.hasPrefix("Command: ") }, id: \.self) { line in
+                                Text(line).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                            }
+                        }.textSelection(.enabled)
                     }
                     HStack {
                         // The panel footer already opens Activity Monitor.
@@ -139,14 +169,52 @@ private struct SuggestionList: View {
                             }.menuStyle(.button).fixedSize().help("Open a terminal session with this suggestion as the question")
                         }
                     }.buttonStyle(.bordered).controlSize(.small)
-                }.textSelection(.enabled)
+                }.padding(10).frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
+                    .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Color.orange.opacity(0.25)))
             }
-            if suggestions.count > 3 { Text("\(suggestions.count - 3) more in the menu").font(.caption2).foregroundStyle(.secondary) }
+            if suggestions.count > 3 { Text("\(suggestions.count - 3) more in the menu").font(.caption).foregroundStyle(.secondary) }
         }
     }
 
     private func toggle(_ id: String) {
         if expanded.remove(id) == nil { expanded.insert(id) }
+    }
+}
+
+/// Splits "Name — value" or "Name: value" titles so the name and the number can be styled apart.
+private struct Headline {
+    let name: String
+    let value: String?
+    init(_ title: String) {
+        if let range = title.range(of: " — ", options: .backwards) ?? title.range(of: ": ") {
+            name = String(title[..<range.lowerBound]); value = String(title[range.upperBound...])
+        } else {
+            name = title; value = nil
+        }
+    }
+}
+
+private struct SectionHeader: View {
+    let text: String
+    init(_ text: String) { self.text = text }
+    var body: some View { Text(text.uppercased()).font(.caption2.weight(.semibold)).foregroundStyle(.secondary).padding(.top, 4) }
+}
+
+private struct ValueRow: View {
+    let symbol: String
+    let tint: Color
+    let name: String
+    let value: String
+    var options = false
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: symbol).foregroundStyle(tint).frame(width: 16)
+            Text(name).lineLimit(1).truncationMode(.middle).help(name)
+            Spacer(minLength: 8)
+            Text(value).monospacedDigit().foregroundStyle(tint == .secondary ? Color.primary : tint)
+            if options { Image(systemName: "ellipsis.circle").foregroundStyle(.secondary) }
+        }.font(.callout).contentShape(.rect)
     }
 }
 

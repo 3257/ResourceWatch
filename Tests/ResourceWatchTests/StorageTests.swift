@@ -154,10 +154,40 @@ private func worktreeFixture(_ root: URL) throws -> URL {
     let orphans = try #require(DerivedDataReader.orphans(projects, derivedData: derivedData))
     #expect(orphans.detail.last == "1 folder whose project no longer exists: Gone.xcodeproj")
     #expect(orphans.command == "rm -rf '\(derivedData.path)/Gone-xyz'")
+    #expect(orphans.trash == ["\(derivedData.path)/Gone-xyz"])
+    let worktreeFindings = WorktreeReader.findings(roots: [root], derivedData: projects, now: Date().addingTimeInterval(2 * 86_400))
+    #expect(worktreeFindings.allSatisfy { $0.trash.isEmpty })
     #expect((orphans.bytes ?? 0) >= 300_000 && (orphans.bytes ?? 0) < 500_000)
 
     let later = WorktreeReader.findings(roots: [root], now: Date().addingTimeInterval(20 * 86_400))
     #expect(later.map(\.title) == ["repo: 1 missing worktree", "Worktree feature/active (repo)", "Worktree feature/done (repo)"])
     #expect(later[1].detail.first == "No git activity for 20 days.")
     #expect(WorktreeReader.quote("it's") == "'it'\\''s'")
+}
+
+@Test func moveToTrashIsOfferedOnlyForRecreatableFolders() {
+    let trashable = StorageFinding(id: "a", title: "Cache", path: "/Users/x/Library/Caches/tool", bytes: 3_000_000_000, detail: [], trash: ["/Users/x/Library/Caches/tool"])
+    let kept = StorageFinding(id: "b", title: "Archives", path: "/Users/x/Library/Developer/Xcode/Archives", bytes: 2_000_000_000, detail: [])
+    let advice = StorageAdvisor.advice([trashable, kept])
+    #expect(advice[0].actions == [.reveal("/Users/x/Library/Caches/tool"), .moveToTrash(title: "Cache — 3.0 GB", paths: ["/Users/x/Library/Caches/tool"])])
+    #expect(advice[1].actions == [.reveal("/Users/x/Library/Developer/Xcode/Archives")])
+    let catalog = Dictionary(uniqueKeysWithValues: StorageTarget.catalog.map { ($0.path, $0.trashable) })
+    #expect(catalog["Library/Developer/Xcode/DerivedData"] == true)
+    #expect(catalog["Library/Caches/org.swift.swiftpm"] == true)
+    for path in ["Library/Developer/Xcode/Archives", "Library/Developer/CoreSimulator/Devices", "Library/Developer/XCTestDevices", ".Trash", "Downloads", "Library/Application Support/MobileSync/Backup"] {
+        #expect(catalog[path] == false, "\(path) must not offer Move to Trash")
+    }
+}
+
+@Test func trashPolicyRejectsHomeTopFoldersAndEscapes() {
+    let home = "/Users/x"
+    #expect(TrashPolicy.allows(["/Users/x/Library/Caches/tool"], home: home))
+    #expect(TrashPolicy.allows(["/Users/x/Library/Developer/Xcode/DerivedData/App-abc", "/Users/x/.npm/_cacache"], home: home))
+    #expect(!TrashPolicy.allows([], home: home))
+    #expect(!TrashPolicy.allows(["/Users/x"], home: home))
+    #expect(!TrashPolicy.allows(["/Users/x/Downloads"], home: home))
+    #expect(!TrashPolicy.allows(["/Users/x/Library/../Downloads"], home: home))
+    #expect(!TrashPolicy.allows(["/Users/xavier/Library/Caches"], home: home))
+    #expect(!TrashPolicy.allows(["/Library/Caches/tool"], home: home))
+    #expect(!TrashPolicy.allows(["/Users/x/Library/Caches/tool", "/etc/hosts"], home: home))
 }

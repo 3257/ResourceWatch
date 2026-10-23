@@ -8,15 +8,17 @@ struct StorageTarget: Sendable {
     // Folders behind macOS privacy prompts; scanned only after the user starts a scan once.
     var protected = false
     var olderThanDays: Int?
+    // Offers Move to Trash only for folders that their tools recreate; others need their own tool or a manual choice.
+    var trashable = false
 
     static let catalog: [StorageTarget] = [
         .init(name: "Xcode DerivedData", path: "Library/Developer/Xcode/DerivedData",
-              advice: "Xcode keeps build products, indexes and logs here for each project.\nDeleting it is safe. The next build of each project takes longer.\nQuit Xcode first, then delete the contents of the folder."),
+              advice: "Xcode keeps build products, indexes and logs here for each project.\nDeleting it is safe. The next build of each project takes longer.\nQuit Xcode first, then delete the contents of the folder.", trashable: true),
         .init(name: "Xcode Archives", path: "Library/Developer/Xcode/Archives",
               advice: "Xcode keeps an archive of each build that you exported or uploaded.\nKeep archives of shipped builds if you need their symbols for crash reports.\nDelete old archives in Xcode → Window → Organizer."),
-        .init(name: "iOS DeviceSupport", path: "Library/Developer/Xcode/iOS DeviceSupport", advice: deviceSupport),
-        .init(name: "watchOS DeviceSupport", path: "Library/Developer/Xcode/watchOS DeviceSupport", advice: deviceSupport),
-        .init(name: "tvOS DeviceSupport", path: "Library/Developer/Xcode/tvOS DeviceSupport", advice: deviceSupport),
+        .init(name: "iOS DeviceSupport", path: "Library/Developer/Xcode/iOS DeviceSupport", advice: deviceSupport, trashable: true),
+        .init(name: "watchOS DeviceSupport", path: "Library/Developer/Xcode/watchOS DeviceSupport", advice: deviceSupport, trashable: true),
+        .init(name: "tvOS DeviceSupport", path: "Library/Developer/Xcode/tvOS DeviceSupport", advice: deviceSupport, trashable: true),
         .init(name: "Simulator devices", path: "Library/Developer/CoreSimulator/Devices",
               advice: "Each simulator keeps its own apps, data and caches here.\nThe command removes only simulators whose runtime is no longer installed.\nRemove other simulators in Xcode → Window → Devices and Simulators.",
               command: "xcrun simctl delete unavailable"),
@@ -24,20 +26,20 @@ struct StorageTarget: Sendable {
               advice: "Xcode clones simulators here to run tests in parallel. The clones are needed only while tests run.\nThe command deletes all clones. Xcode creates new ones for the next parallel test run.",
               command: "xcrun simctl --set testing delete all"),
         .init(name: "Swift Package Manager cache", path: "Library/Caches/org.swift.swiftpm",
-              advice: "Swift Package Manager keeps downloaded package repositories here.\nDeleting it is safe. Xcode downloads the packages again on the next resolve, which is slow for large projects."),
+              advice: "Swift Package Manager keeps downloaded package repositories here.\nDeleting it is safe. Xcode downloads the packages again on the next resolve, which is slow for large projects.", trashable: true),
         .init(name: "Xcode cache", path: "Library/Caches/com.apple.dt.Xcode",
-              advice: "Xcode keeps download and documentation caches here.\nDeleting it is safe. Quit Xcode first."),
+              advice: "Xcode keeps download and documentation caches here.\nDeleting it is safe. Quit Xcode first.", trashable: true),
         .init(name: "Homebrew cache", path: "Library/Caches/Homebrew",
               advice: "Homebrew keeps the downloads of installed packages and old versions here.\nThe command removes all cached downloads and old versions.",
-              command: "brew cleanup --prune=all"),
+              command: "brew cleanup --prune=all", trashable: true),
         .init(name: "CocoaPods cache", path: "Library/Caches/CocoaPods",
               advice: "CocoaPods keeps downloaded pods here.\nThe command empties the cache. CocoaPods downloads pods again on the next install.",
-              command: "pod cache clean --all"),
+              command: "pod cache clean --all", trashable: true),
         .init(name: "npm cache", path: ".npm",
               advice: "npm keeps downloaded packages here.\nThe command empties the cache. npm downloads packages again when needed.",
-              command: "npm cache clean --force"),
+              command: "npm cache clean --force", trashable: true),
         .init(name: "Gradle caches", path: ".gradle/caches",
-              advice: "Gradle keeps downloaded dependencies and build caches here.\nDeleting it is safe when no Gradle build runs. The next build downloads dependencies again."),
+              advice: "Gradle keeps downloaded dependencies and build caches here.\nDeleting it is safe when no Gradle build runs. The next build downloads dependencies again.", trashable: true),
         .init(name: "Trash", path: ".Trash", advice: "Files in the Trash still use disk space.\nEmpty the Trash in Finder to free it."),
         .init(name: "iPhone and iPad backups", path: "Library/Application Support/MobileSync/Backup",
               advice: "Finder keeps full backups of iPhones and iPads here.\nDelete old backups in Finder: select the device, then Manage Backups."),
@@ -56,6 +58,7 @@ struct StorageFinding: Equatable, Sendable {
     var complete = true
     var detail: [String]
     var command: String?
+    var trash: [String] = []
 }
 
 enum ScanTrigger: Sendable { case manual, daily, storageAlert }
@@ -112,7 +115,19 @@ enum StorageScanner {
             } else {
                 size = allocatedSize(url, deadline: deadline)
             }
-            return StorageFinding(id: target.path, title: target.name, path: url.path, bytes: size.bytes, complete: size.complete, detail: detail, command: target.command)
+            return StorageFinding(id: target.path, title: target.name, path: url.path, bytes: size.bytes, complete: size.complete, detail: detail, command: target.command,
+                                  trash: target.trashable ? [url.path] : [])
+        }
+    }
+}
+
+enum TrashPolicy {
+    /// Only folders at least two levels below home qualify, never home itself or a direct child such as ~/Downloads.
+    static func allows(_ paths: [String], home: String = NSHomeDirectory()) -> Bool {
+        let prefix = home.hasSuffix("/") ? home : home + "/"
+        return !paths.isEmpty && paths.allSatisfy { path in
+            let standardized = (path as NSString).standardizingPath
+            return standardized.hasPrefix(prefix) && standardized.dropFirst(prefix.count).split(separator: "/").count >= 2
         }
     }
 }
@@ -123,8 +138,10 @@ enum StorageAdvisor {
             .sorted { ($0.bytes ?? -1) > ($1.bytes ?? -1) }
             .map { finding in
                 let size = finding.bytes.map { (finding.complete ? "" : "at least ") + format($0) }
+                let title = size.map { "\(finding.title) — \($0)" } ?? finding.title
                 let actions: [Recommendation.Action] = [.reveal(finding.path)] + (finding.command.map { [.copy($0)] } ?? [])
-                return Recommendation(id: "storage-\(finding.id)", title: size.map { "\(finding.title) — \($0)" } ?? finding.title,
+                    + (finding.trash.isEmpty ? [] : [.moveToTrash(title: title, paths: finding.trash)])
+                return Recommendation(id: "storage-\(finding.id)", title: title,
                                       detail: finding.detail + [(finding.path as NSString).abbreviatingWithTildeInPath] + Advisor.commandLines(actions),
                                       bytes: finding.bytes, actions: actions)
             }

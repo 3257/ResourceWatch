@@ -32,7 +32,8 @@ enum DerivedDataReader {
                               bytes: sizes.reduce(0) { $0 + $1.bytes }, complete: sizes.allSatisfy(\.complete),
                               detail: ["Xcode keeps DerivedData after you delete or move a project. Nothing uses these folders now.",
                                        "\(orphans.count) folder\(orphans.count == 1 ? "" : "s") whose project no longer exists: " + orphans.map { ($0.workspace as NSString).lastPathComponent }.joined(separator: ", ")],
-                              command: "rm -rf " + orphans.map { WorktreeReader.quote($0.folder.path) }.joined(separator: " "))
+                              command: "rm -rf " + orphans.map { WorktreeReader.quote($0.folder.path) }.joined(separator: " "),
+                              trash: orphans.map(\.folder.path))
     }
 }
 
