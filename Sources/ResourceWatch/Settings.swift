@@ -11,6 +11,7 @@ struct WatchSettings: Codable, Equatable {
     var cooldownMinutes = 15.0
     var networkMBPerSecond = 25.0
     var showMenuBarStats = false
+    var projectFolders = ["~/WorkProjects", "~/PlayProjects"]
     static func load(_ defaults: UserDefaults = .standard) -> Self {
         guard let data = defaults.data(forKey: "watchSettings"),
               let saved = try? JSONSerialization.jsonObject(with: data) as? [String: Any],

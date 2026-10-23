@@ -68,8 +68,12 @@ enum StorageScanner {
         return (total, true)
     }
 
-    static func scan(_ targets: [StorageTarget] = StorageTarget.catalog, home: URL, includeProtected: Bool, now: Date = Date()) -> [StorageFinding] {
-        targets.filter { includeProtected || !$0.protected }.compactMap { target in
+    static func scan(_ targets: [StorageTarget] = StorageTarget.catalog, home: URL, projectFolders: [String] = [], includeProtected: Bool, now: Date = Date()) -> [StorageFinding] {
+        let roots = projectFolders.map { URL(fileURLWithPath: ($0 as NSString).expandingTildeInPath) }
+        let derivedData = home.appending(path: "Library/Developer/Xcode/DerivedData")
+        let projects = DerivedDataReader.projects(in: derivedData)
+        let developerFindings = WorktreeReader.findings(roots: roots, derivedData: projects, now: now) + [DerivedDataReader.orphans(projects, derivedData: derivedData)].compactMap { $0 }
+        return developerFindings + targets.filter { includeProtected || !$0.protected }.compactMap { target in
             let url = home.appending(path: target.path)
             guard FileManager.default.fileExists(atPath: url.path) else { return nil }
             let deadline = Date().addingTimeInterval(timeLimit)

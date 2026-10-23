@@ -16,6 +16,7 @@ struct AlertEngine {
     mutating func evaluate(_ m: Metrics, settings: WatchSettings, now: Date) -> [WatchAlert] {
         var alertSettings = settings
         alertSettings.showMenuBarStats = false
+        alertSettings.projectFolders = []
         if previousSettings != alertSettings || lastSample.map({ now.timeIntervalSince($0) > 30 || now < $0 }) == true {
             policy = AlertPolicy()
         }

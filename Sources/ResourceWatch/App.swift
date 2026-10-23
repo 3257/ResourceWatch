@@ -38,17 +38,18 @@ final class Monitor: ObservableObject {
         return processAdvice + (storageWarning ? Array(storageAdvice.prefix(3)) : [])
     }
     var storageCleanupSummary: String {
-        let total = storageAdvice.compactMap(\.bytes).reduce(0, +)
-        return total > 0 ? "Storage cleanup: \(StorageAdvisor.format(total)) found" : "Storage cleanup"
+        // Items overlap (a worktree's DerivedData is also inside the DerivedData total), so a summed size would overstate.
+        storageAdvice.isEmpty ? "Storage cleanup" : "Storage cleanup: \(storageAdvice.count) suggestion\(storageAdvice.count == 1 ? "" : "s")"
     }
     func scanStorage(trigger: ScanTrigger) {
         guard !isScanning, ScanSchedule.due(last: lastStorageScan, now: Date(), trigger: trigger) else { return }
         if trigger == .manual { UserDefaults.standard.set(true, forKey: "storageScanApproved") }
         let includeProtected = UserDefaults.standard.bool(forKey: "storageScanApproved")
+        let folders = settings.projectFolders
         isScanning = true
         Task {
             let findings = await Task.detached(priority: .background) {
-                StorageScanner.scan(home: URL.homeDirectory, includeProtected: includeProtected)
+                StorageScanner.scan(home: URL.homeDirectory, projectFolders: folders, includeProtected: includeProtected)
             }.value
             storageAdvice = StorageAdvisor.advice(findings)
             lastStorageScan = Date(); isScanning = false
@@ -139,6 +140,14 @@ final class Monitor: ObservableObject {
         if parts.count == 3, parts[0] == "process" { return Advisor.processHint(identity: String(parts[2]), samples: m.processSamples) }
         if alert.key == "disk" || alert.key == "growth" { return storageAdvice.first.map { "Largest cleanup: \($0.title)" } }
         return nil
+    }
+    func addProjectFolder() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true; panel.canChooseFiles = false; panel.allowsMultipleSelection = true
+        NSApp.activate(ignoringOtherApps: true)
+        guard panel.runModal() == .OK else { return }
+        let folders = panel.urls.map { ($0.path as NSString).abbreviatingWithTildeInPath }
+        settings.projectFolders += folders.filter { !settings.projectFolders.contains($0) }
     }
     func perform(_ action: Recommendation.Action) {
         switch action {
@@ -259,6 +268,17 @@ struct ResourceWatchApp: App {
                         Button("Restore defaults") { monitor.settings = WatchSettings() }
                     }
                     }
+                    Section("Project folders") {
+                        Text("Storage cleanup looks for merged or idle git worktrees in these folders.").font(.caption)
+                        ForEach(monitor.settings.projectFolders, id: \.self) { folder in
+                            HStack {
+                                Text(folder)
+                                Spacer()
+                                Button("Remove") { monitor.settings.projectFolders.removeAll { $0 == folder } }
+                            }
+                        }
+                        Button("Add…") { monitor.addProjectFolder() }
+                    }
                     Section("Notifications and startup") {
                         Toggle("Show CPU and RAM in menu bar", isOn: $monitor.settings.showMenuBarStats)
                         Text(monitor.notificationStatus).font(.caption)
@@ -267,7 +287,7 @@ struct ResourceWatchApp: App {
                         Toggle("Launch at login", isOn: Binding(get: { SMAppService.mainApp.status == .enabled }, set: { monitor.setLogin($0) }))
                         Text(monitor.loginStatus).font(.caption)
                     }
-                }.formStyle(.grouped).frame(width: 450, height: 580).task { monitor.refreshPermission() }
+                }.formStyle(.grouped).frame(width: 450, height: 680).task { monitor.refreshPermission() }
         }.windowResizability(.contentSize)
     }
 }

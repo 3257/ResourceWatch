@@ -71,3 +71,88 @@ private func write(_ url: URL, bytes: Int) throws {
     #expect(ScanSchedule.due(last: now.addingTimeInterval(-90_000), now: now, trigger: .daily))
     #expect(ScanSchedule.due(last: now.addingTimeInterval(60), now: now, trigger: .daily))
 }
+
+// Git records real paths, and macOS temporary folders sit behind the /var symlink.
+private func canonical(_ url: URL) -> URL {
+    guard let resolved = realpath(url.path, nil) else { return url }
+    defer { free(resolved) }
+    return URL(fileURLWithPath: String(cString: resolved))
+}
+
+@discardableResult
+private func git(_ arguments: [String], in folder: URL) throws -> String {
+    let process = Process(), output = Pipe()
+    process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+    process.arguments = ["-C", folder.path, "-c", "user.name=Test", "-c", "user.email=test@example.com", "-c", "commit.gpgsign=false"] + arguments
+    process.environment = ["GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_NOSYSTEM": "1", "PATH": "/usr/bin:/bin"]
+    process.standardOutput = output; process.standardError = FileHandle.nullDevice
+    try process.run()
+    let data = output.fileHandleForReading.readDataToEndOfFile()
+    process.waitUntilExit()
+    #expect(process.terminationStatus == 0, "git \(arguments.joined(separator: " "))")
+    return String(decoding: data, as: UTF8.self)
+}
+
+private func project(in derivedData: URL, _ name: String, workspace: String, bytes: Int) throws {
+    let folder = derivedData.appending(path: name)
+    try write(folder.appending(path: "Build/output.bin"), bytes: bytes)
+    try PropertyListSerialization.data(fromPropertyList: ["WorkspacePath": workspace], format: .xml, options: 0).write(to: folder.appending(path: "info.plist"))
+}
+
+@Test func worktreeCheckFlagsMergedIdleAndMissingWorktrees() throws {
+    let root = try canonical(temporaryFolder())
+    defer { try? FileManager.default.removeItem(at: root) }
+    let repo = root.appending(path: "repo")
+    try FileManager.default.createDirectory(at: repo, withIntermediateDirectories: true)
+    try git(["init", "-q", "-b", "main"], in: repo)
+    try write(repo.appending(path: "README"), bytes: 10)
+    try git(["add", "."], in: repo); try git(["commit", "-qm", "start"], in: repo)
+    try git(["worktree", "add", "-q", "-b", "feature/done", "../wt-done"], in: repo)
+    try write(root.appending(path: "wt-done/done.txt"), bytes: 10)
+    try git(["add", "."], in: root.appending(path: "wt-done")); try git(["commit", "-qm", "done"], in: root.appending(path: "wt-done"))
+    try git(["merge", "-q", "feature/done"], in: repo)
+    try git(["worktree", "add", "-q", "-b", "feature/active", "../wt-active"], in: repo)
+    try write(root.appending(path: "wt-active/active.txt"), bytes: 10)
+    try git(["add", "."], in: root.appending(path: "wt-active")); try git(["commit", "-qm", "active"], in: root.appending(path: "wt-active"))
+    try git(["worktree", "add", "-q", "-b", "feature/gone", "../wt-gone"], in: repo)
+    try FileManager.default.removeItem(at: root.appending(path: "wt-gone"))
+
+    #expect(WorktreeReader.repositories(in: root).map(\.path) == [repo.path])
+    let trees = WorktreeReader.worktrees(repository: repo)
+    #expect(trees.map(\.branch) == ["feature/active", "feature/done", "feature/gone"])
+    #expect(trees.map(\.exists) == [true, true, false])
+    #expect(WorktreeReader.findings(roots: [root]).filter { $0.id.hasPrefix("worktree-") }.isEmpty)
+
+    let soon = WorktreeReader.findings(roots: [root], now: Date().addingTimeInterval(2 * 86_400))
+    #expect(soon.map(\.title) == ["repo: 1 missing worktree", "Worktree feature/done (repo)"])
+    #expect(soon[0].command == "git -C '\(repo.path)' worktree prune")
+    let done = soon[1]
+    #expect(done.detail.first == "Branch feature/done is merged into main.")
+    #expect(done.command?.hasPrefix("git -C '\(repo.path)' worktree remove '") == true)
+    #expect(done.command?.hasSuffix("/wt-done'") == true)
+    #expect((done.bytes ?? 0) > 0)
+
+    let derivedData = try canonical(temporaryFolder())
+    defer { try? FileManager.default.removeItem(at: derivedData) }
+    for workspace in [root.appending(path: "wt-done/App.xcodeproj"), repo.appending(path: "Other.xcodeproj")] {
+        try FileManager.default.createDirectory(at: workspace, withIntermediateDirectories: true)
+    }
+    try project(in: derivedData, "App-abc", workspace: root.appending(path: "wt-done/App.xcodeproj").path, bytes: 500_000)
+    try project(in: derivedData, "Gone-xyz", workspace: "/nonexistent/Gone.xcodeproj", bytes: 300_000)
+    try project(in: derivedData, "Other-def", workspace: repo.appending(path: "Other.xcodeproj").path, bytes: 10)
+    let projects = DerivedDataReader.projects(in: derivedData)
+    #expect(projects.map(\.folder.lastPathComponent) == ["App-abc", "Gone-xyz", "Other-def"])
+    let withBuilds = try #require(WorktreeReader.findings(roots: [root], derivedData: projects, now: Date().addingTimeInterval(2 * 86_400)).last)
+    #expect((withBuilds.bytes ?? 0) >= (done.bytes ?? 0) + 500_000)
+    #expect(withBuilds.detail.contains { $0.hasPrefix("Includes 0.0 GB of Xcode DerivedData") })
+    #expect(withBuilds.command?.hasSuffix("/wt-done' && rm -rf '\(derivedData.path)/App-abc'") == true)
+    let orphans = try #require(DerivedDataReader.orphans(projects, derivedData: derivedData))
+    #expect(orphans.detail == ["1 folder whose project no longer exists: Gone.xcodeproj"])
+    #expect(orphans.command == "rm -rf '\(derivedData.path)/Gone-xyz'")
+    #expect((orphans.bytes ?? 0) >= 300_000 && (orphans.bytes ?? 0) < 500_000)
+
+    let later = WorktreeReader.findings(roots: [root], now: Date().addingTimeInterval(20 * 86_400))
+    #expect(later.map(\.title) == ["repo: 1 missing worktree", "Worktree feature/active (repo)", "Worktree feature/done (repo)"])
+    #expect(later[1].detail.first == "No git activity for 20 days.")
+    #expect(WorktreeReader.quote("it's") == "'it'\\''s'")
+}
