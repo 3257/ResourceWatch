@@ -3,6 +3,7 @@ import Foundation
 struct WatchAlert: Equatable {
     var title: String
     var body: String
+    var key = ""
 }
 
 struct AlertEngine {
@@ -15,6 +16,7 @@ struct AlertEngine {
     mutating func evaluate(_ m: Metrics, settings: WatchSettings, now: Date) -> [WatchAlert] {
         var alertSettings = settings
         alertSettings.showMenuBarStats = false
+        alertSettings.projectFolders = []
         if previousSettings != alertSettings || lastSample.map({ now.timeIntervalSince($0) > 30 || now < $0 }) == true {
             policy = AlertPolicy()
         }
@@ -27,7 +29,7 @@ struct AlertEngine {
         var alerts: [WatchAlert] = []
         func check(_ key: String, _ active: Bool, _ duration: TimeInterval, _ title: String, _ body: String) {
             if policy.evaluate(key, active: active, now: now, sustained: duration) {
-                alerts.append(WatchAlert(title: title, body: body))
+                alerts.append(WatchAlert(title: title, body: body, key: key))
             }
         }
         var keys: Set<String> = ["cpu", "memory", "disk", "growth", "network"]

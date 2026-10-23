@@ -21,12 +21,40 @@ final class Monitor: ObservableObject {
     @Published var cpuHistory: [Double] = []
     @Published var currentWarnings: [String] = []
     @Published var samplingError: String?
+    @Published var processAdvice: [Recommendation] = []
+    @Published var appGroups: [String] = []
+    @Published var storageAdvice: [Recommendation] = []
+    @Published var lastStorageScan: Date?
+    @Published var isScanning = false
+    @Published var agents: [AIAgent] = []
     var warningSummary: [String] {
         if let samplingError { return ["Monitoring unavailable: \(samplingError)"] }
         guard let latest else { return [] }
         var lines = HealthSummary.warningDetails(latest, settings: settings)
         if currentWarnings.contains("Storage growing quickly") { lines.append(String(format: "Storage fell by over %.0f GB within an hour", settings.diskGrowthGB)) }
         return lines
+    }
+    var suggestions: [Recommendation] {
+        let storageWarning = currentWarnings.contains("Low storage") || currentWarnings.contains("Storage growing quickly")
+        return processAdvice + (storageWarning ? Array(storageAdvice.prefix(3)) : [])
+    }
+    var storageCleanupSummary: String {
+        // Items overlap (a worktree's DerivedData is also inside the DerivedData total), so a summed size would overstate.
+        storageAdvice.isEmpty ? "Storage cleanup" : "Storage cleanup: \(storageAdvice.count) suggestion\(storageAdvice.count == 1 ? "" : "s")"
+    }
+    func scanStorage(trigger: ScanTrigger) {
+        guard !isScanning, ScanSchedule.due(last: lastStorageScan, now: Date(), trigger: trigger) else { return }
+        if trigger == .manual { UserDefaults.standard.set(true, forKey: "storageScanApproved") }
+        let includeProtected = UserDefaults.standard.bool(forKey: "storageScanApproved")
+        let folders = settings.projectFolders
+        isScanning = true
+        Task {
+            let findings = await Task.detached(priority: .background) {
+                StorageScanner.scan(home: URL.homeDirectory, projectFolders: folders, includeProtected: includeProtected)
+            }.value
+            storageAdvice = StorageAdvisor.advice(findings)
+            lastStorageScan = Date(); isScanning = false
+        }
     }
     private var miniPanel: MiniPanelController?
     var hasWarning: Bool { !warningSummary.isEmpty }
@@ -45,6 +73,7 @@ final class Monitor: ObservableObject {
     init() { start() }
     func start() {
         guard task == nil else { return }
+        Task { agents = await Task.detached(priority: .utility) { AIAgents.detect() }.value }
         let sampler = SamplingWorker()
         task = Task {
             while !Task.isCancelled {
@@ -91,16 +120,59 @@ final class Monitor: ObservableObject {
         memoryProcesses = m.processSamples.sorted { $0.memory > $1.memory }.prefix(5).map {
             "\($0.name) · \(String(format: "%.1f", Double($0.memory) / gib)) GiB · PID \($0.identity.split(separator: ":")[0])"
         }
+        processAdvice = Advisor.processAdvice(m, settings: settings)
+        appGroups = Advisor.groups(m.processSamples).prefix(3).map {
+            "\($0.name) · \(String(format: "%.1f", Double($0.memory) / gib)) GiB · \($0.members.count) process\($0.members.count == 1 ? "" : "es")"
+        }
         networkSummary = String(format: "Network: ↓ %.1f · ↑ %.1f MB/s", m.network.download / 1e6, m.network.upload / 1e6)
         networkDetails = [String(format: "Session: ↓ %.2f · ↑ %.2f GB", Double(m.network.received) / 1e9, Double(m.network.sent) / 1e9), "Interfaces: \(m.network.interfaces.joined(separator: ", "))", "Wi-Fi/Ethernet traffic, including local transfers"]
         status = String(format: "CPU %.0f%% · %.0f GB free", m.cpu, Double(m.free) / 1e9)
         details = String(format: "CPU: %.1f%% of all cores\nMemory pressure: %@\nSwap: %.2f GiB\nHome volume: %.1f / %.1f GB free\n\nTop CPU processes (100%% = one core):\n%@", m.cpu, m.pressure >= 4 ? "critical" : m.pressure >= 2 ? "warning" : "normal", Double(m.swap) / gib, Double(m.free) / 1e9, Double(m.total) / 1e9, m.processes)
         for alert in engine.evaluate(m, settings: settings, now: now) {
-            events.insert("\(now.formatted(date: .omitted, time: .shortened)) — \(alert.title)\n\(alert.body)", at: 0)
+            let body = hint(for: alert, m).map { alert.body + "\n" + $0 } ?? alert.body
+            events.insert("\(now.formatted(date: .omitted, time: .shortened)) — \(alert.title)\n\(body)", at: 0)
             events = Array(events.prefix(30))
-            send(alert.title, alert.body)
+            send(alert.title, body)
         }
         if engine.storageGrowthActive { currentWarnings.append("Storage growing quickly") }
+        scanStorage(trigger: currentWarnings.contains("Low storage") || engine.storageGrowthActive ? .storageAlert : .daily)
+    }
+    private func hint(for alert: WatchAlert, _ m: Metrics) -> String? {
+        let parts = alert.key.split(separator: "-", maxSplits: 2)
+        if parts.count == 3, parts[0] == "process" { return Advisor.processHint(identity: String(parts[2]), samples: m.processSamples) }
+        if alert.key == "disk" || alert.key == "growth" { return storageAdvice.first.map { "Largest cleanup: \($0.title)" } }
+        return nil
+    }
+    func addProjectFolder() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true; panel.canChooseFiles = false; panel.allowsMultipleSelection = true
+        NSApp.activate(ignoringOtherApps: true)
+        guard panel.runModal() == .OK else { return }
+        let folders = panel.urls.map { ($0.path as NSString).abbreviatingWithTildeInPath }
+        settings.projectFolders += folders.filter { !settings.projectFolders.contains($0) }
+    }
+    func ask(_ agent: AIAgent, about recommendation: Recommendation) {
+        let gib = Double(1 << 30)
+        var context = "Mac: macOS \(ProcessInfo.processInfo.operatingSystemVersionString)"
+        if let m = latest {
+            context += String(format: ", %.1f of %.0f GiB RAM used, memory pressure %@, swap %.1f GiB, %.0f of %.0f GB storage free.",
+                              Double(m.memoryUsed) / gib, Double(m.memoryTotal) / gib, m.pressure >= 4 ? "critical" : m.pressure >= 2 ? "warning" : "normal",
+                              Double(m.swap) / gib, Double(m.free) / 1e9, Double(m.total) / 1e9)
+        }
+        let worktree = recommendation.id.hasPrefix("storage-worktree-") ? recommendation.actions.compactMap { if case .reveal(let path) = $0 { path } else { nil } }.first : nil
+        do {
+            try AIAgents.launch(agent, prompt: AIAgents.prompt(for: recommendation, context: context), directory: worktree ?? NSHomeDirectory())
+        } catch {
+            events.insert("Could not start \(agent.name)\n\(error.localizedDescription)", at: 0)
+        }
+    }
+    func perform(_ action: Recommendation.Action) {
+        switch action {
+        case .reveal(let path): NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)])
+        case .copy(let command): NSPasteboard.general.clearContents(); NSPasteboard.general.setString(command, forType: .string)
+        case .activate(let pid): NSRunningApplication(processIdentifier: pid)?.activate()
+        case .openActivityMonitor: NSWorkspace.shared.open(URL(fileURLWithPath: "/System/Applications/Utilities/Activity Monitor.app"))
+        }
     }
     private func send(_ title: String, _ body: String, verify: Bool = false) {
         let content = UNMutableNotificationContent(); content.title = title; content.body = body; content.sound = .default
@@ -143,6 +215,12 @@ struct ResourceWatchApp: App {
                     }
                     Divider()
                 }
+                if !monitor.suggestions.isEmpty {
+                    Section("Suggestions") {
+                        ForEach(monitor.suggestions) { RecommendationMenu(recommendation: $0, monitor: monitor) }
+                    }
+                    Divider()
+                }
                 Button("Show mini panel") { monitor.showMiniPanel() }
                 Divider()
                 ForEach(Array(monitor.details.components(separatedBy: "\n").prefix(4).enumerated()), id: \.offset) { _, line in
@@ -157,6 +235,12 @@ struct ResourceWatchApp: App {
                 }
                 Menu(monitor.networkSummary) {
                     ForEach(Array(monitor.networkDetails.enumerated()), id: \.offset) { _, line in Text(line) }
+                }
+                Menu(monitor.storageCleanupSummary) {
+                    if monitor.isScanning { Text("Scanning…") } else if let last = monitor.lastStorageScan { Text("Last scanned \(last.formatted(date: .omitted, time: .shortened))") }
+                    Button("Scan now") { monitor.scanStorage(trigger: .manual) }.disabled(monitor.isScanning)
+                    if !monitor.storageAdvice.isEmpty { Divider() }
+                    ForEach(monitor.storageAdvice) { RecommendationMenu(recommendation: $0, monitor: monitor) }
                 }
                 Menu("Top processes") {
                     ForEach(Array(monitor.details.components(separatedBy: "\n").dropFirst(6).enumerated()), id: \.offset) { _, line in Text(line) }
@@ -200,6 +284,17 @@ struct ResourceWatchApp: App {
                         Button("Restore defaults") { monitor.settings = WatchSettings() }
                     }
                     }
+                    Section("Project folders") {
+                        Text("Storage cleanup looks for merged or idle git worktrees in these folders.").font(.caption)
+                        ForEach(monitor.settings.projectFolders, id: \.self) { folder in
+                            HStack {
+                                Text(folder)
+                                Spacer()
+                                Button("Remove") { monitor.settings.projectFolders.removeAll { $0 == folder } }
+                            }
+                        }
+                        Button("Add…") { monitor.addProjectFolder() }
+                    }
                     Section("Notifications and startup") {
                         Toggle("Show CPU and RAM in menu bar", isOn: $monitor.settings.showMenuBarStats)
                         Text(monitor.notificationStatus).font(.caption)
@@ -208,8 +303,34 @@ struct ResourceWatchApp: App {
                         Toggle("Launch at login", isOn: Binding(get: { SMAppService.mainApp.status == .enabled }, set: { monitor.setLogin($0) }))
                         Text(monitor.loginStatus).font(.caption)
                     }
-                }.formStyle(.grouped).frame(width: 450, height: 580).task { monitor.refreshPermission() }
+                }.formStyle(.grouped).frame(width: 450, height: 680).task { monitor.refreshPermission() }
         }.windowResizability(.contentSize)
+    }
+}
+
+private struct RecommendationMenu: View {
+    let recommendation: Recommendation
+    let monitor: Monitor
+    var body: some View {
+        Menu(recommendation.title) {
+            ForEach(recommendation.detail, id: \.self) { Text($0) }
+            Divider()
+            ForEach(recommendation.actions.filter(\.isAvailable), id: \.self) { action in
+                Button(action.title) { monitor.perform(action) }
+            }
+            if !monitor.agents.isEmpty {
+                Menu("Ask AI in Terminal") {
+                    ForEach(monitor.agents, id: \.self) { agent in Button(agent.name) { monitor.ask(agent, about: recommendation) } }
+                }
+            }
+        }
+    }
+}
+
+extension Recommendation.Action {
+    var isAvailable: Bool {
+        if case .activate(let pid) = self { return NSRunningApplication(processIdentifier: pid) != nil }
+        return true
     }
 }
 

@@ -16,11 +16,13 @@ struct Metrics: Sendable {
     var network = NetworkMetrics()
 }
 
-struct ProcessSample: Sendable {
+struct ProcessSample: Equatable, Sendable {
     var identity: String
     var name: String
     var cpu: Double
     var memory: UInt64
+    var pid: Int32 = 0
+    var parentPID: Int32 = 0
 }
 
 final class Sampler {
@@ -89,7 +91,7 @@ final class Sampler {
             var name = [CChar](repeating: 0, count: 1024)
             _ = proc_name(pid, &name, UInt32(name.count))
             let decodedName = String(decoding: name.prefix(while: { $0 != 0 }).map { UInt8(bitPattern: $0) }, as: UTF8.self)
-            samples.append(ProcessSample(identity: identity, name: decodedName.isEmpty ? "PID \(pid)" : decodedName, cpu: usage, memory: all.ptinfo.pti_resident_size))
+            samples.append(ProcessSample(identity: identity, name: decodedName.isEmpty ? "PID \(pid)" : decodedName, cpu: usage, memory: all.ptinfo.pti_resident_size, pid: pid, parentPID: Int32(bitPattern: all.pbsd.pbi_ppid)))
         }
         processTimes = next; lastTime = now
         let top = samples.sorted { $0.cpu > $1.cpu }.prefix(5).map { p in

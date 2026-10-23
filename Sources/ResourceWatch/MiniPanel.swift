@@ -52,6 +52,7 @@ private struct MiniPanelView: View {
                     tile(.storage, symbol: "internaldrive", value: String(format: "%.0f GB", Double(m.free) / 1e9), detail: "Free on home volume", fraction: m.total > 0 ? 1 - Double(m.free) / Double(m.total) : 0)
                 }
                 Sparkline(values: monitor.cpuHistory).stroke(Color.accentColor, style: StrokeStyle(lineWidth: 1.5, lineJoin: .round)).frame(height: 26).accessibilityLabel("CPU history, up to ten minutes")
+                if !monitor.suggestions.isEmpty { SuggestionList(suggestions: monitor.suggestions, agents: monitor.agents, perform: monitor.perform, ask: monitor.ask) }
                 if let selected { details(selected, m) }
             } else { Text("Collecting first sample…").foregroundStyle(.secondary) }
             HStack {
@@ -85,17 +86,57 @@ private struct MiniPanelView: View {
             case .cpu: Text(m.processes).font(.caption2)
             case .memory:
                 Text(monitor.memoryDetails + String(format: "\nSwap %.1f GiB", Double(m.swap) / gib)).font(.caption2)
-                ForEach(Array(monitor.memoryProcesses.prefix(3).enumerated()), id: \.offset) { _, row in Text(row).font(.caption2) }
+                Text("By app").font(.caption2.bold())
+                ForEach(Array(monitor.appGroups.enumerated()), id: \.offset) { _, row in Text(row).font(.caption2) }
             case .network:
                 ForEach(Array(monitor.networkDetails.enumerated()), id: \.offset) { _, row in Text(row).font(.caption2) }
             case .storage:
                 Text(String(format: "%.1f / %.1f GB free", Double(m.free) / 1e9, Double(m.total) / 1e9)).font(.caption2)
-                Text("Alerts track low space and rapid growth.").font(.caption2)
+                ForEach(monitor.storageAdvice.prefix(3)) { Text($0.title).font(.caption2) }
+                Text(monitor.storageAdvice.isEmpty ? "No cleanup over 1 GB found yet. Use Storage cleanup in the menu." : "Storage cleanup in the menu has actions.").font(.caption2).foregroundStyle(.secondary)
             }
-        }.textSelection(.enabled)
+        }.textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
     }
     private func rate(_ value: Double) -> String {
         value >= 1e6 ? String(format: "%.1f MB/s", value / 1e6) : String(format: "%.0f KB/s", value / 1e3)
+    }
+}
+
+private struct SuggestionList: View {
+    let suggestions: [Recommendation]
+    let agents: [AIAgent]
+    let perform: (Recommendation.Action) -> Void
+    let ask: (AIAgent, Recommendation) -> Void
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Suggestions").font(.caption.bold())
+            ForEach(suggestions.prefix(3)) { suggestion in
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(suggestion.title).font(.caption).fixedSize(horizontal: false, vertical: true)
+                    Text(suggestion.detail.filter { !$0.hasPrefix("Command: ") }.joined(separator: "\n")).font(.caption2).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    HStack {
+                        // The panel footer already opens Activity Monitor.
+                        ForEach(suggestion.actions.filter { $0.isAvailable && $0 != .openActivityMonitor }, id: \.self) { action in
+                            Button(action.title) { perform(action) }.help(action.help)
+                        }
+                        if !agents.isEmpty {
+                            Menu("Ask AI") {
+                                ForEach(agents, id: \.self) { agent in Button(agent.name) { ask(agent, suggestion) } }
+                            }.menuStyle(.button).fixedSize().help("Open a terminal session with this suggestion as the question")
+                        }
+                    }.buttonStyle(.bordered).controlSize(.small)
+                }.textSelection(.enabled)
+            }
+            if suggestions.count > 3 { Text("\(suggestions.count - 3) more in the menu").font(.caption2).foregroundStyle(.secondary) }
+        }
+    }
+}
+
+private extension Recommendation.Action {
+    var help: String {
+        if case .copy(let command) = self { return "Copies: \(command)" }
+        return title
     }
 }
 
