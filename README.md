@@ -2,7 +2,7 @@
 
 <img src="docs/screenshots/app-icon.png" width="80" alt="ResourceWatch app icon: a white pulse and red status dot on a deep blue rounded tile">
 
-Standalone macOS menu bar monitor. Swift 6, macOS 14+, no dependencies, network calls, administrator access, automatic process termination, or disk deletion.
+Standalone macOS menu bar monitor. Swift 6, macOS 14+, no dependencies, network calls, administrator access, automatic process termination, or automatic file deletion.
 
 Free and open source under the [MIT license](LICENSE). No account, API key, subscription or hosted service is required.
 
@@ -12,11 +12,23 @@ Free and open source under the [MIT license](LICENSE). No account, API key, subs
 
 <img src="docs/screenshots/dashboard.png" width="340" alt="ResourceWatch mini panel with CPU, memory, network and free storage tiles, a CPU history graph and a pin control">
 
+### Suggestions
+
+<img src="docs/screenshots/suggestions-menu.png" width="720" alt="ResourceWatch menu with a Suggestions section; the Running simulators suggestion is open and explains the cause, the RAM share, the largest process, what to do, and offers Copy command and Ask AI in Terminal">
+
+### Storage cleanup and growth
+
+<img src="docs/screenshots/storage-cleanup.png" width="720" alt="Storage cleanup submenu with a Growing now folder that grew 1.3 GB in the last hour, its details with Show in Finder and Ask AI in Terminal, and the largest cleanup items such as Xcode DerivedData and simulator devices">
+
+### Mini panel suggestions
+
+<img src="docs/screenshots/mini-panel-suggestions.png" width="340" alt="ResourceWatch mini panel with an expanded suggestion and its Copy command and Ask AI buttons, and storage details listing a growing folder and the largest cleanup items">
+
 ### Alert thresholds
 
 <img src="docs/screenshots/settings.png" width="360" alt="ResourceWatch Settings with sliders for CPU, process memory, free storage, storage growth, network traffic, sustained duration and cooldown">
 
-Actual app captures with example live readings and selected thresholds. Click a metric tile for details; adjust the sliders to suit your Mac.
+Actual app captures with example live readings and selected thresholds. The suggestion captures used a 5 GiB process-memory threshold, and a 1.2 GB demo file in `~/ResourceWatchDemo` to show folder growth. Click a metric tile for details; adjust the sliders to suit your Mac.
 
 ## Install and run
 
@@ -51,12 +63,13 @@ When a warning is active, **Current warnings** appears at the top of the menu wi
 
 **Suggestions** appears below the warnings and states what to do. ResourceWatch groups helper processes under their app, so a warning names the app and not one helper. For example: `Google Chrome: 11.2 GiB RAM in 34 processes`. Each suggestion opens a submenu with the largest process, a tip and one or more actions:
 
-- **Bring app to front**, **Open Activity Monitor**, **Reveal in Finder**.
+- **Bring app to front**, **Open Activity Monitor**, **Show in Finder**.
+- **Move to Trash…**: offered only for folders that their tools recreate, such as DerivedData, DeviceSupport and package-manager caches, and for orphaned DerivedData folders. A dialog names every item first, and **Cancel** is the default button. Archives, simulators, worktrees, backups, Downloads and growing folders are never offered; they need their own tool or your own choice. In the mini panel, click a cleanup item to choose **Show in Finder** or **Move to Trash…**.
 - **Copy command**: copies a cleanup command, such as `xcrun simctl delete unavailable` or `git -C … worktree remove …`, to the clipboard. You paste it into Terminal and run it yourself.
 
 **Ask AI in Terminal** (menu) or **Ask AI** (mini panel) sends a suggestion to an AI coding CLI. ResourceWatch detects Claude Code (`claude`), Codex (`codex`), OpenCode (`opencode --prompt`) and Gemini CLI (`gemini -i`) through your login shell's `PATH` at launch, and lists only the installed ones. The app opens a `.command` file with your default terminal app. The agent starts an interactive session in your login shell, with the suggestion, your Mac's memory and storage readings, and a rule to ask before it deletes files or stops processes. Worktree suggestions start in the worktree folder; other suggestions start in your home folder. The terminal opens a new window, or a new tab when **System Settings → Desktop & Dock → Prefer tabs when opening documents** is **Always**. No Automation or Accessibility permission is needed.
 
-ResourceWatch never deletes files and never quits apps. Summed resident memory counts shared pages once per process, so app totals are approximate. macOS does not tell other apps which browser tab owns a process; for Chromium browsers the tip points to the browser's Task Manager (Shift+Esc).
+ResourceWatch never quits apps, never empties the Trash, and moves files to the Trash only after you confirm. Summed resident memory counts shared pages once per process, so app totals are approximate. macOS does not tell other apps which browser tab owns a process; for Chromium browsers the tip points to the browser's Task Manager (Shift+Esc).
 
 The **Storage cleanup** submenu lists items of 1 GB or more, largest first:
 
@@ -65,6 +78,13 @@ The **Storage cleanup** submenu lists items of 1 GB or more, largest first:
 - Git worktrees in your project folders whose branch is merged into the default branch, or that have no git activity for 14 days. A worktree's size includes its Xcode DerivedData folders.
 
 Set the project folders in **Settings… → Project folders**; the defaults are `~/WorkProjects` and `~/PlayProjects`. ResourceWatch reads git's worktree records directly and runs `git` only during a scan, to find merged branches.
+
+**Growing now** names the folders that grew in the last hour. ResourceWatch watches file changes in your home folder with FSEvents, records the allocated size of each changed file, and adds the growth up for each folder. It drills down to the folder that holds most of the growth; below the top levels it reports the common parent instead of splitting into several deep folders, for example `~/Library/Developer/Xcode/DerivedData/App-abc/Build/Products` instead of `~/Library`. When the storage-growth warning is active, these folders lead **Suggestions**, and the growth notification names the fastest-growing folder. The rules:
+
+- A new file counts in full. The first change to a file that already existed only sets a baseline, so a large disk image that grows a little does not count in full. Deleted files, and files moved out of a folder, subtract their known size; files moved in count in full, so a move inside your home folder balances out.
+- Only folders that grew by 200 MB or more in the last hour are listed. Paths and sizes stay in memory for one hour and are never written to disk or sent anywhere. File contents are never read.
+- Desktop, Documents, Downloads, iCloud Drive, app containers and the Photos library are protected by macOS. ResourceWatch never reads file sizes there, so no permission prompt appears; it counts their file changes only, and lists a protected folder with 2,000 or more changes in the last hour. Downloads is measured after the first **Scan now**.
+- Growth outside your home folder, such as swap files, system updates and APFS snapshots, is not included. Monitoring starts when the app launches.
 
 A scan runs at launch, again after 24 hours, and at most once an hour while a low-storage or storage-growth warning is active. **Scan now** starts one at any time. Scans run at background priority, outside the ten-second sampler, and stop measuring a folder after 20 seconds (the size then shows as "at least"). Folders that macOS protects, such as Downloads, are scanned only after the first **Scan now**, so macOS asks for access when you expect it. Folders that need Full Disk Access are skipped. Low-storage and growth notifications name the largest cleanup item, and process notifications add the app tip.
 
@@ -80,11 +100,11 @@ Samples every ten seconds, off the UI thread:
 - More than 10 GB lost over a rolling hour, after at least five minutes of observation.
 - Upload or download above 25 MB/s for 60 seconds (adjustable). This indicates sustained traffic, not a claim the connection is saturated.
 
-Alerts repeat every 15 minutes while a condition persists. Recovery resets the sustained window. The menu retains the latest 30 alerts in memory. Disk history resets on restart and measures free-space change, not attribution to a folder. The sampler never scans folders; only storage cleanup scans measure folder sizes. APFS shared capacity and snapshots can affect free space.
+Alerts repeat every 15 minutes while a condition persists. Recovery resets the sustained window. The menu retains the latest 30 alerts in memory. Disk history resets on restart and measures free-space change; **Growing now** attributes growth to folders. The sampler never scans folders; only storage cleanup scans measure folder sizes. APFS shared capacity and snapshots can affect free space.
 
 Top processes show PID, executable name, CPU since the previous sample and RSS. CPU counters use the machine's Mach timebase; 100% means one core. RSS is not Activity Monitor's memory footprint. Some protected processes cannot be inspected and are omitted. Command arguments and environments are never collected. Sampling uses native APIs on a serial utility queue, with no subprocess per tick.
 
-The compact native menu shows CPU, memory pressure, swap and storage. **Top processes** and **Recent alerts** expand into submenus. Open **Settings…** to adjust thresholds, CPU/process duration and cooldown with sliders; selected values remain visible beside their labels. **Launch at login** is a separate toggle. Preferences persist locally. Memory pressure and low space use a fixed 30-second window. Login startup is opt-in through Apple's Service Management API; the toggle reads the OS state. Keep the app at a stable path before enabling it. macOS may require approval in Login Items settings. Quitting stops monitoring until the next launch.
+The compact native menu shows CPU, memory pressure, swap and storage. While a menu is open, its values stay fixed so submenus do not close under the pointer; the latest readings appear when it closes, and notifications are never delayed. **Top processes** and **Recent alerts** expand into submenus. Open **Settings…** to adjust thresholds, CPU/process duration and cooldown with sliders; selected values remain visible beside their labels. **Launch at login** is a separate toggle. Preferences persist locally. Memory pressure and low space use a fixed 30-second window. Login startup is opt-in through Apple's Service Management API; the toggle reads the OS state. Keep the app at a stable path before enabling it. macOS may require approval in Login Items settings. Quitting stops monitoring until the next launch.
 
 The **RAM** submenu adds estimated used/physical memory, compressed/wired memory and the five largest resident processes. The estimate uses resident internal pages minus purgeable pages, plus wired and compressor pages. Pressure remains the basis of system-memory alerts: a large cache or old swap does not necessarily mean trouble.
 
