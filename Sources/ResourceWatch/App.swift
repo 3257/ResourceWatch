@@ -58,8 +58,8 @@ final class Monitor: ObservableObject {
             let findings = await Task.detached(priority: .background) {
                 StorageScanner.scan(home: URL.homeDirectory, projectFolders: folders, includeProtected: includeProtected)
             }.value
-            storageAdvice = StorageAdvisor.advice(findings)
-            lastStorageScan = Date(); isScanning = false
+            lastStorageScan = Date()
+            updateMenus { [self] in storageAdvice = StorageAdvisor.advice(findings); isScanning = false }
         }
     }
     private var miniPanel: MiniPanelController?
@@ -76,7 +76,16 @@ final class Monitor: ObservableObject {
     }
     private var task: Task<Void, Never>?
     private var engine = AlertEngine()
-    init() { start() }
+    private let menuGate = MenuUpdateGate()
+    init() {
+        for (name, tracking) in [(NSMenu.didBeginTrackingNotification, true), (NSMenu.didEndTrackingNotification, false)] {
+            NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.menuGate.setHolding(tracking) }
+            }
+        }
+        start()
+    }
+    private func updateMenus(_ change: @escaping () -> Void) { menuGate.submit(change) }
     func start() {
         guard task == nil else { return }
         Task { agents = await Task.detached(priority: .utility) { AIAgents.detect() }.value }
@@ -118,7 +127,20 @@ final class Monitor: ObservableObject {
         }
     }
     private func accept(_ m: Metrics) {
-        let now = Date(), gib = Double(1 << 30)
+        let now = Date()
+        // Alerts and notifications never wait; only what the menus show is held back while a menu is open.
+        var newEvents: [String] = []
+        for alert in engine.evaluate(m, settings: settings, now: now) {
+            let body = hint(for: alert, m).map { alert.body + "\n" + $0 } ?? alert.body
+            newEvents.append("\(now.formatted(date: .omitted, time: .shortened)) — \(alert.title)\n\(body)")
+            send(alert.title, body)
+        }
+        let growing = engine.storageGrowthActive
+        updateMenus { [self] in publish(m, now: now, newEvents: newEvents, growing: growing) }
+    }
+
+    private func publish(_ m: Metrics, now: Date, newEvents: [String], growing: Bool) {
+        let gib = Double(1 << 30)
         latest = m; samplingError = nil
         currentWarnings = HealthSummary.warnings(m, settings: settings)
         cpuHistory.append(m.cpu)
@@ -136,19 +158,14 @@ final class Monitor: ObservableObject {
         networkDetails = [String(format: "Session: ↓ %.2f · ↑ %.2f GB", Double(m.network.received) / 1e9, Double(m.network.sent) / 1e9), "Interfaces: \(m.network.interfaces.joined(separator: ", "))", "Wi-Fi/Ethernet traffic, including local transfers"]
         status = String(format: "CPU %.0f%% · %.0f GB free", m.cpu, Double(m.free) / 1e9)
         details = String(format: "CPU: %.1f%% of all cores\nMemory pressure: %@\nSwap: %.2f GiB\nHome volume: %.1f / %.1f GB free\n\nTop CPU processes (100%% = one core):\n%@", m.cpu, m.pressure >= 4 ? "critical" : m.pressure >= 2 ? "warning" : "normal", Double(m.swap) / gib, Double(m.free) / 1e9, Double(m.total) / 1e9, m.processes)
-        for alert in engine.evaluate(m, settings: settings, now: now) {
-            let body = hint(for: alert, m).map { alert.body + "\n" + $0 } ?? alert.body
-            events.insert("\(now.formatted(date: .omitted, time: .shortened)) — \(alert.title)\n\(body)", at: 0)
-            events = Array(events.prefix(30))
-            send(alert.title, body)
-        }
-        if engine.storageGrowthActive { currentWarnings.append("Storage growing quickly") }
-        scanStorage(trigger: currentWarnings.contains("Low storage") || engine.storageGrowthActive ? .storageAlert : .daily)
+        events = Array((newEvents.reversed() + events).prefix(30))
+        if growing { currentWarnings.append("Storage growing quickly") }
+        scanStorage(trigger: currentWarnings.contains("Low storage") || growing ? .storageAlert : .daily)
         if lastGrowthReport.map({ now.timeIntervalSince($0) >= 60 }) ?? true {
             lastGrowthReport = now
             Task {
-                growthReport = await growthTracker.report()
-                growthAdvice = GrowthAdvisor.advice(growthReport)
+                let report = await growthTracker.report()
+                updateMenus { [self] in growthReport = report; growthAdvice = GrowthAdvisor.advice(report) }
             }
         }
     }
@@ -166,55 +183,6 @@ final class Monitor: ObservableObject {
         guard panel.runModal() == .OK else { return }
         let folders = panel.urls.map { ($0.path as NSString).abbreviatingWithTildeInPath }
         settings.projectFolders += folders.filter { !settings.projectFolders.contains($0) }
-    }
-    func ask(_ agent: AIAgent, about recommendation: Recommendation) {
-        let gib = Double(1 << 30)
-        var context = "Mac: macOS \(ProcessInfo.processInfo.operatingSystemVersionString)"
-        if let m = latest {
-            context += String(format: ", %.1f of %.0f GiB RAM used, memory pressure %@, swap %.1f GiB, %.0f of %.0f GB storage free.",
-                              Double(m.memoryUsed) / gib, Double(m.memoryTotal) / gib, m.pressure >= 4 ? "critical" : m.pressure >= 2 ? "warning" : "normal",
-                              Double(m.swap) / gib, Double(m.free) / 1e9, Double(m.total) / 1e9)
-        }
-        let worktree = recommendation.id.hasPrefix("storage-worktree-") ? recommendation.actions.compactMap { if case .reveal(let path) = $0 { path } else { nil } }.first : nil
-        do {
-            try AIAgents.launch(agent, prompt: AIAgents.prompt(for: recommendation, context: context), directory: worktree ?? NSHomeDirectory())
-        } catch {
-            events.insert("Could not start \(agent.name)\n\(error.localizedDescription)", at: 0)
-        }
-    }
-    func perform(_ action: Recommendation.Action) {
-        switch action {
-        case .reveal(let path): NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)])
-        case .copy(let command): NSPasteboard.general.clearContents(); NSPasteboard.general.setString(command, forType: .string)
-        case .activate(let pid): NSRunningApplication(processIdentifier: pid)?.activate()
-        case .openActivityMonitor: NSWorkspace.shared.open(URL(fileURLWithPath: "/System/Applications/Utilities/Activity Monitor.app"))
-        case .moveToTrash(let title, let paths): confirmTrash(title: title, paths: paths)
-        }
-    }
-    private func confirmTrash(title: String, paths: [String]) {
-        guard TrashPolicy.allows(paths) else {
-            events.insert("Did not move \(title) to the Trash\nThe path is outside the allowed folders.", at: 0)
-            return
-        }
-        let alert = NSAlert()
-        alert.alertStyle = .warning
-        alert.messageText = "Move \(title) to the Trash?"
-        alert.informativeText = "ResourceWatch moves these items to the Trash:\n\n" + paths.map { ($0 as NSString).abbreviatingWithTildeInPath }.joined(separator: "\n")
-            + "\n\nQuit apps that use them first, such as Xcode. You can restore the items from the Trash until you empty it."
-        let move = alert.addButton(withTitle: "Move to Trash")
-        move.hasDestructiveAction = true
-        move.keyEquivalent = ""
-        alert.addButton(withTitle: "Cancel").keyEquivalent = "\r"
-        NSApp.activate(ignoringOtherApps: true)
-        guard alert.runModal() == .alertFirstButtonReturn else { return }
-        var failures: [String] = []
-        for path in paths {
-            do { try FileManager.default.trashItem(at: URL(fileURLWithPath: path), resultingItemURL: nil) } catch { failures.append("\((path as NSString).abbreviatingWithTildeInPath): \(error.localizedDescription)") }
-        }
-        let now = Date().formatted(date: .omitted, time: .shortened)
-        events.insert(failures.isEmpty ? "\(now) — Moved \(title) to the Trash" : "\(now) — Could not move all of \(title) to the Trash\n" + failures.joined(separator: "\n"), at: 0)
-        lastStorageScan = nil
-        scanStorage(trigger: .daily)
     }
     private func send(_ title: String, _ body: String, verify: Bool = false) {
         let content = UNMutableNotificationContent(); content.title = title; content.body = body; content.sound = .default
