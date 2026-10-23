@@ -27,6 +27,10 @@ final class Monitor: ObservableObject {
     @Published var lastStorageScan: Date?
     @Published var isScanning = false
     @Published var agents: [AIAgent] = []
+    @Published var growthReport = GrowthReport()
+    @Published var growthAdvice: [Recommendation] = []
+    private let growthTracker = GrowthTracker()
+    private var lastGrowthReport: Date?
     var warningSummary: [String] {
         if let samplingError { return ["Monitoring unavailable: \(samplingError)"] }
         guard let latest else { return [] }
@@ -35,8 +39,9 @@ final class Monitor: ObservableObject {
         return lines
     }
     var suggestions: [Recommendation] {
-        let storageWarning = currentWarnings.contains("Low storage") || currentWarnings.contains("Storage growing quickly")
-        return processAdvice + (storageWarning ? Array(storageAdvice.prefix(3)) : [])
+        let growing = currentWarnings.contains("Storage growing quickly")
+        let storageWarning = growing || currentWarnings.contains("Low storage")
+        return processAdvice + (growing ? Array(growthAdvice.prefix(3)) : []) + (storageWarning ? Array(storageAdvice.prefix(3)) : [])
     }
     var storageCleanupSummary: String {
         // Items overlap (a worktree's DerivedData is also inside the DerivedData total), so a summed size would overstate.
@@ -46,6 +51,7 @@ final class Monitor: ObservableObject {
         guard !isScanning, ScanSchedule.due(last: lastStorageScan, now: Date(), trigger: trigger) else { return }
         if trigger == .manual { UserDefaults.standard.set(true, forKey: "storageScanApproved") }
         let includeProtected = UserDefaults.standard.bool(forKey: "storageScanApproved")
+        if includeProtected { growthTracker.allowMeasuring("Downloads") }
         let folders = settings.projectFolders
         isScanning = true
         Task {
@@ -74,6 +80,8 @@ final class Monitor: ObservableObject {
     func start() {
         guard task == nil else { return }
         Task { agents = await Task.detached(priority: .utility) { AIAgents.detect() }.value }
+        growthTracker.start()
+        if UserDefaults.standard.bool(forKey: "storageScanApproved") { growthTracker.allowMeasuring("Downloads") }
         let sampler = SamplingWorker()
         task = Task {
             while !Task.isCancelled {
@@ -136,10 +144,18 @@ final class Monitor: ObservableObject {
         }
         if engine.storageGrowthActive { currentWarnings.append("Storage growing quickly") }
         scanStorage(trigger: currentWarnings.contains("Low storage") || engine.storageGrowthActive ? .storageAlert : .daily)
+        if lastGrowthReport.map({ now.timeIntervalSince($0) >= 60 }) ?? true {
+            lastGrowthReport = now
+            Task {
+                growthReport = await growthTracker.report()
+                growthAdvice = GrowthAdvisor.advice(growthReport)
+            }
+        }
     }
     private func hint(for alert: WatchAlert, _ m: Metrics) -> String? {
         let parts = alert.key.split(separator: "-", maxSplits: 2)
         if parts.count == 3, parts[0] == "process" { return Advisor.processHint(identity: String(parts[2]), samples: m.processSamples) }
+        if alert.key == "growth", let fastest = growthAdvice.first { return "Fastest growth: \(fastest.title)" }
         if alert.key == "disk" || alert.key == "growth" { return storageAdvice.first.map { "Largest cleanup: \($0.title)" } }
         return nil
     }
@@ -239,6 +255,11 @@ struct ResourceWatchApp: App {
                 Menu(monitor.storageCleanupSummary) {
                     if monitor.isScanning { Text("Scanning…") } else if let last = monitor.lastStorageScan { Text("Last scanned \(last.formatted(date: .omitted, time: .shortened))") }
                     Button("Scan now") { monitor.scanStorage(trigger: .manual) }.disabled(monitor.isScanning)
+                    if !monitor.growthAdvice.isEmpty {
+                        Divider()
+                        Text("Growing now: +\(StorageAdvisor.format(monitor.growthReport.total)) in your home folder in the last hour")
+                        ForEach(monitor.growthAdvice) { RecommendationMenu(recommendation: $0, monitor: monitor) }
+                    }
                     if !monitor.storageAdvice.isEmpty { Divider() }
                     ForEach(monitor.storageAdvice) { RecommendationMenu(recommendation: $0, monitor: monitor) }
                 }

@@ -66,6 +66,13 @@ The **Storage cleanup** submenu lists items of 1 GB or more, largest first:
 
 Set the project folders in **Settings… → Project folders**; the defaults are `~/WorkProjects` and `~/PlayProjects`. ResourceWatch reads git's worktree records directly and runs `git` only during a scan, to find merged branches.
 
+**Growing now** names the folders that grew in the last hour. ResourceWatch watches file changes in your home folder with FSEvents, records the allocated size of each changed file, and adds the growth up for each folder. It drills down to the folder that holds most of the growth, for example `~/Library/Developer/Xcode/DerivedData/App-abc/Build/Products` instead of `~/Library`. When the storage-growth warning is active, these folders lead **Suggestions**, and the growth notification names the fastest-growing folder. The rules:
+
+- A new file counts in full. The first change to a file that already existed only sets a baseline, so a large disk image that grows a little does not count in full. Renamed and moved files do not count; deleted files subtract their known size.
+- Only folders that grew by 200 MB or more in the last hour are listed. Paths and sizes stay in memory for one hour and are never written to disk or sent anywhere. File contents are never read.
+- Desktop, Documents, Downloads, iCloud Drive, app containers and the Photos library are protected by macOS. ResourceWatch never reads file sizes there, so no permission prompt appears; it counts their file changes only, and lists a protected folder with 2,000 or more changes in the last hour. Downloads is measured after the first **Scan now**.
+- Growth outside your home folder, such as swap files, system updates and APFS snapshots, is not included. Monitoring starts when the app launches.
+
 A scan runs at launch, again after 24 hours, and at most once an hour while a low-storage or storage-growth warning is active. **Scan now** starts one at any time. Scans run at background priority, outside the ten-second sampler, and stop measuring a folder after 20 seconds (the size then shows as "at least"). Folders that macOS protects, such as Downloads, are scanned only after the first **Scan now**, so macOS asks for access when you expect it. Folders that need Full Disk Access are skipped. Low-storage and growth notifications name the largest cleanup item, and process notifications add the app tip.
 
 Choose **Show mini panel** for a small floating dashboard with CPU, memory, network and storage tiles plus up to ten minutes of CPU history. Click a tile for details and click it again to collapse. The pin button toggles staying above other windows. Closing the panel leaves monitoring running. This is a live app panel, not a macOS WidgetKit desktop widget, and shares the existing ten-second sampler.
@@ -80,7 +87,7 @@ Samples every ten seconds, off the UI thread:
 - More than 10 GB lost over a rolling hour, after at least five minutes of observation.
 - Upload or download above 25 MB/s for 60 seconds (adjustable). This indicates sustained traffic, not a claim the connection is saturated.
 
-Alerts repeat every 15 minutes while a condition persists. Recovery resets the sustained window. The menu retains the latest 30 alerts in memory. Disk history resets on restart and measures free-space change, not attribution to a folder. The sampler never scans folders; only storage cleanup scans measure folder sizes. APFS shared capacity and snapshots can affect free space.
+Alerts repeat every 15 minutes while a condition persists. Recovery resets the sustained window. The menu retains the latest 30 alerts in memory. Disk history resets on restart and measures free-space change; **Growing now** attributes growth to folders. The sampler never scans folders; only storage cleanup scans measure folder sizes. APFS shared capacity and snapshots can affect free space.
 
 Top processes show PID, executable name, CPU since the previous sample and RSS. CPU counters use the machine's Mach timebase; 100% means one core. RSS is not Activity Monitor's memory footprint. Some protected processes cannot be inspected and are omitted. Command arguments and environments are never collected. Sampling uses native APIs on a serial utility queue, with no subprocess per tick.
 
