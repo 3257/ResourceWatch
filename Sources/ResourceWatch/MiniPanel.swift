@@ -91,7 +91,8 @@ private struct MiniPanelView: View {
                 ForEach(Array(monitor.networkDetails.enumerated()), id: \.offset) { _, row in Text(row).font(.caption2) }
             case .storage:
                 Text(String(format: "%.1f / %.1f GB free", Double(m.free) / 1e9, Double(m.total) / 1e9)).font(.caption2)
-                Text("Alerts track low space and rapid growth.").font(.caption2)
+                ForEach(monitor.storageAdvice.prefix(3)) { Text($0.title).font(.caption2) }
+                Text(monitor.storageAdvice.isEmpty ? "No cleanup over 1 GB found yet. Use Storage cleanup in the menu." : "Storage cleanup in the menu has actions.").font(.caption2).foregroundStyle(.secondary)
             }
         }.textSelection(.enabled)
     }

@@ -23,6 +23,9 @@ final class Monitor: ObservableObject {
     @Published var samplingError: String?
     @Published var processAdvice: [Recommendation] = []
     @Published var appGroups: [String] = []
+    @Published var storageAdvice: [Recommendation] = []
+    @Published var lastStorageScan: Date?
+    @Published var isScanning = false
     var warningSummary: [String] {
         if let samplingError { return ["Monitoring unavailable: \(samplingError)"] }
         guard let latest else { return [] }
@@ -30,7 +33,27 @@ final class Monitor: ObservableObject {
         if currentWarnings.contains("Storage growing quickly") { lines.append(String(format: "Storage fell by over %.0f GB within an hour", settings.diskGrowthGB)) }
         return lines
     }
-    var suggestions: [Recommendation] { processAdvice }
+    var suggestions: [Recommendation] {
+        let storageWarning = currentWarnings.contains("Low storage") || currentWarnings.contains("Storage growing quickly")
+        return processAdvice + (storageWarning ? Array(storageAdvice.prefix(3)) : [])
+    }
+    var storageCleanupSummary: String {
+        let total = storageAdvice.compactMap(\.bytes).reduce(0, +)
+        return total > 0 ? "Storage cleanup: \(StorageAdvisor.format(total)) found" : "Storage cleanup"
+    }
+    func scanStorage(trigger: ScanTrigger) {
+        guard !isScanning, ScanSchedule.due(last: lastStorageScan, now: Date(), trigger: trigger) else { return }
+        if trigger == .manual { UserDefaults.standard.set(true, forKey: "storageScanApproved") }
+        let includeProtected = UserDefaults.standard.bool(forKey: "storageScanApproved")
+        isScanning = true
+        Task {
+            let findings = await Task.detached(priority: .background) {
+                StorageScanner.scan(home: URL.homeDirectory, includeProtected: includeProtected)
+            }.value
+            storageAdvice = StorageAdvisor.advice(findings)
+            lastStorageScan = Date(); isScanning = false
+        }
+    }
     private var miniPanel: MiniPanelController?
     var hasWarning: Bool { !warningSummary.isEmpty }
     let menuBarSymbol = "waveform.path.ecg"
@@ -109,10 +132,12 @@ final class Monitor: ObservableObject {
             send(alert.title, body)
         }
         if engine.storageGrowthActive { currentWarnings.append("Storage growing quickly") }
+        scanStorage(trigger: currentWarnings.contains("Low storage") || engine.storageGrowthActive ? .storageAlert : .daily)
     }
     private func hint(for alert: WatchAlert, _ m: Metrics) -> String? {
         let parts = alert.key.split(separator: "-", maxSplits: 2)
         if parts.count == 3, parts[0] == "process" { return Advisor.processHint(identity: String(parts[2]), samples: m.processSamples) }
+        if alert.key == "disk" || alert.key == "growth" { return storageAdvice.first.map { "Largest cleanup: \($0.title)" } }
         return nil
     }
     func perform(_ action: Recommendation.Action) {
@@ -184,6 +209,13 @@ struct ResourceWatchApp: App {
                 }
                 Menu(monitor.networkSummary) {
                     ForEach(Array(monitor.networkDetails.enumerated()), id: \.offset) { _, line in Text(line) }
+                }
+                Menu(monitor.storageCleanupSummary) {
+                    if monitor.isScanning { Text("Scanning…") }
+                    else if let last = monitor.lastStorageScan { Text("Last scanned \(last.formatted(date: .omitted, time: .shortened))") }
+                    Button("Scan now") { monitor.scanStorage(trigger: .manual) }.disabled(monitor.isScanning)
+                    if !monitor.storageAdvice.isEmpty { Divider() }
+                    ForEach(monitor.storageAdvice) { RecommendationMenu(recommendation: $0, monitor: monitor) }
                 }
                 Menu("Top processes") {
                     ForEach(Array(monitor.details.components(separatedBy: "\n").dropFirst(6).enumerated()), id: \.offset) { _, line in Text(line) }
