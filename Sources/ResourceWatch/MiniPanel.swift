@@ -95,7 +95,7 @@ private struct MiniPanelView: View {
                 ForEach(monitor.storageAdvice.prefix(3)) { Text($0.title).font(.caption2) }
                 Text(monitor.storageAdvice.isEmpty ? "No cleanup over 1 GB found yet. Use Storage cleanup in the menu." : "Storage cleanup in the menu has actions.").font(.caption2).foregroundStyle(.secondary)
             }
-        }.textSelection(.enabled)
+        }.textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
     }
     private func rate(_ value: Double) -> String {
         value >= 1e6 ? String(format: "%.1f MB/s", value / 1e6) : String(format: "%.0f KB/s", value / 1e3)
@@ -110,10 +110,12 @@ private struct SuggestionList: View {
             Text("Suggestions").font(.caption.bold())
             ForEach(suggestions.prefix(3)) { suggestion in
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(suggestion.title).font(.caption)
+                    Text(suggestion.title).font(.caption).fixedSize(horizontal: false, vertical: true)
                     Text(suggestion.detail.filter { !$0.hasPrefix("Command: ") }.joined(separator: "\n")).font(.caption2).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                     HStack {
-                        ForEach(suggestion.actions.filter(\.isAvailable), id: \.self) { action in
+                        // The panel footer already opens Activity Monitor.
+                        ForEach(suggestion.actions.filter { $0.isAvailable && $0 != .openActivityMonitor }, id: \.self) { action in
                             Button(action.title) { perform(action) }.help(action.help)
                         }
                     }.buttonStyle(.bordered).controlSize(.small)
