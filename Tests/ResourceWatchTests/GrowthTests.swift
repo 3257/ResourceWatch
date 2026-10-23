@@ -23,8 +23,10 @@ private let mb: Int64 = 1_000_000
     var ledger = GrowthLedger(home: home)
     let now = Date()
     ledger.record("\(home)/Downloads/movie.crdownload", .created(900 * mb), at: now)
-    ledger.record("\(home)/Downloads/movie.crdownload", .renamed(nil), at: now)
-    ledger.record("\(home)/Downloads/movie.mp4", .renamed(900 * mb), at: now)
+    ledger.record("\(home)/Downloads/movie.crdownload", .removed, at: now)
+    ledger.record("\(home)/Downloads/movie.mp4", .created(900 * mb), at: now)
+    ledger.record("\(home)/Clones/device/big.img", .created(400 * mb), at: now)
+    ledger.record("\(home)/Clones/device/big.img", .removed, at: now)
     ledger.record("\(home)/tmp/scratch.bin", .created(500 * mb), at: now)
     ledger.record("\(home)/tmp/scratch.bin", .removed, at: now)
     ledger.record("\(home)/tmp/unknown.bin", .removed, at: now)
@@ -76,8 +78,8 @@ private let mb: Int64 = 1_000_000
     let created = Flags(kFSEventStreamEventFlagItemCreated), renamed = Flags(kFSEventStreamEventFlagItemRenamed), modified = Flags(kFSEventStreamEventFlagItemModified)
     #expect(GrowthTracker.change(created | modified, size: 10) == .created(10))
     #expect(GrowthTracker.change(modified, size: 10) == .modified(10))
-    #expect(GrowthTracker.change(renamed, size: 10) == .renamed(10))
-    #expect(GrowthTracker.change(renamed, size: nil) == .renamed(nil))
+    #expect(GrowthTracker.change(renamed, size: 10) == .created(10))
+    #expect(GrowthTracker.change(renamed, size: nil) == .removed)
     #expect(GrowthTracker.change(created | Flags(kFSEventStreamEventFlagItemRemoved), size: nil) == .removed)
 }
 
@@ -114,4 +116,17 @@ private let mb: Int64 = 1_000_000
     #expect(advice[0].actions == [.copy("brew cleanup --prune=all")])
     #expect(advice[1].actions == [.copy("docker system df")])
     #expect(advice[1].detail.contains { $0.hasPrefix("macOS protects this folder") })
+}
+
+@Test func deepSplitsReportTheirCommonParentAndOldDropsExpire() {
+    var ledger = GrowthLedger(home: home)
+    let now = Date()
+    let device = "\(home)/Library/Developer/XCTestDevices/E369/data"
+    ledger.record("\(device)/Library/a", .created(600 * mb), at: now)
+    ledger.record("\(device)/Containers/Shared/b", .created(400 * mb), at: now)
+    #expect(ledger.report(now: now).entries.map(\.path) == [device])
+    ledger.lastDrop = now.addingTimeInterval(-4_000)
+    #expect(!ledger.report(now: now).incomplete)
+    ledger.lastDrop = now.addingTimeInterval(-60)
+    #expect(ledger.report(now: now).incomplete)
 }

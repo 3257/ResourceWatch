@@ -12,11 +12,23 @@ Free and open source under the [MIT license](LICENSE). No account, API key, subs
 
 <img src="docs/screenshots/dashboard.png" width="340" alt="ResourceWatch mini panel with CPU, memory, network and free storage tiles, a CPU history graph and a pin control">
 
+### Suggestions
+
+<img src="docs/screenshots/suggestions-menu.png" width="720" alt="ResourceWatch menu with a Suggestions section; the Running simulators suggestion is open and explains the cause, the RAM share, the largest process, what to do, and offers Copy command and Ask AI in Terminal">
+
+### Storage cleanup and growth
+
+<img src="docs/screenshots/storage-cleanup.png" width="720" alt="Storage cleanup submenu with a Growing now folder that grew 1.3 GB in the last hour, its details with Reveal in Finder and Ask AI in Terminal, and the largest cleanup items such as Xcode DerivedData and simulator devices">
+
+### Mini panel suggestions
+
+<img src="docs/screenshots/mini-panel-suggestions.png" width="340" alt="ResourceWatch mini panel with an expanded suggestion and its Copy command and Ask AI buttons, and storage details listing a growing folder and the largest cleanup items">
+
 ### Alert thresholds
 
 <img src="docs/screenshots/settings.png" width="360" alt="ResourceWatch Settings with sliders for CPU, process memory, free storage, storage growth, network traffic, sustained duration and cooldown">
 
-Actual app captures with example live readings and selected thresholds. Click a metric tile for details; adjust the sliders to suit your Mac.
+Actual app captures with example live readings and selected thresholds. The suggestion captures used a 5 GiB process-memory threshold, and a 1.2 GB demo file in `~/ResourceWatchDemo` to show folder growth. Click a metric tile for details; adjust the sliders to suit your Mac.
 
 ## Install and run
 
@@ -66,9 +78,9 @@ The **Storage cleanup** submenu lists items of 1 GB or more, largest first:
 
 Set the project folders in **Settings… → Project folders**; the defaults are `~/WorkProjects` and `~/PlayProjects`. ResourceWatch reads git's worktree records directly and runs `git` only during a scan, to find merged branches.
 
-**Growing now** names the folders that grew in the last hour. ResourceWatch watches file changes in your home folder with FSEvents, records the allocated size of each changed file, and adds the growth up for each folder. It drills down to the folder that holds most of the growth, for example `~/Library/Developer/Xcode/DerivedData/App-abc/Build/Products` instead of `~/Library`. When the storage-growth warning is active, these folders lead **Suggestions**, and the growth notification names the fastest-growing folder. The rules:
+**Growing now** names the folders that grew in the last hour. ResourceWatch watches file changes in your home folder with FSEvents, records the allocated size of each changed file, and adds the growth up for each folder. It drills down to the folder that holds most of the growth; below the top levels it reports the common parent instead of splitting into several deep folders, for example `~/Library/Developer/Xcode/DerivedData/App-abc/Build/Products` instead of `~/Library`. When the storage-growth warning is active, these folders lead **Suggestions**, and the growth notification names the fastest-growing folder. The rules:
 
-- A new file counts in full. The first change to a file that already existed only sets a baseline, so a large disk image that grows a little does not count in full. Renamed and moved files do not count; deleted files subtract their known size.
+- A new file counts in full. The first change to a file that already existed only sets a baseline, so a large disk image that grows a little does not count in full. Deleted files, and files moved out of a folder, subtract their known size; files moved in count in full, so a move inside your home folder balances out.
 - Only folders that grew by 200 MB or more in the last hour are listed. Paths and sizes stay in memory for one hour and are never written to disk or sent anywhere. File contents are never read.
 - Desktop, Documents, Downloads, iCloud Drive, app containers and the Photos library are protected by macOS. ResourceWatch never reads file sizes there, so no permission prompt appears; it counts their file changes only, and lists a protected folder with 2,000 or more changes in the last hour. Downloads is measured after the first **Scan now**.
 - Growth outside your home folder, such as swap files, system updates and APFS snapshots, is not included. Monitoring starts when the app launches.

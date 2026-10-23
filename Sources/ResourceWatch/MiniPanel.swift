@@ -112,14 +112,22 @@ private struct SuggestionList: View {
     let agents: [AIAgent]
     let perform: (Recommendation.Action) -> Void
     let ask: (AIAgent, Recommendation) -> Void
+    @State private var expanded: Set<String> = []
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Suggestions").font(.caption.bold())
             ForEach(suggestions.prefix(3)) { suggestion in
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(suggestion.title).font(.caption).fixedSize(horizontal: false, vertical: true)
-                    Text(suggestion.detail.filter { !$0.hasPrefix("Command: ") }.joined(separator: "\n")).font(.caption2).foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
+                    // Collapsed by default so several suggestions fit on screen; the menu always shows the full text.
+                    Button { toggle(suggestion.id) } label: {
+                        Label(suggestion.title, systemImage: expanded.contains(suggestion.id) ? "chevron.down" : "chevron.right")
+                            .font(.caption).multilineTextAlignment(.leading).fixedSize(horizontal: false, vertical: true)
+                    }.buttonStyle(.plain).accessibilityHint(expanded.contains(suggestion.id) ? "Hide details" : "Show details")
+                        .accessibilityIdentifier("suggestion-\(suggestion.id)")
+                    if expanded.contains(suggestion.id) {
+                        Text(suggestion.detail.filter { !$0.hasPrefix("Command: ") }.joined(separator: "\n")).font(.caption2).foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                     HStack {
                         // The panel footer already opens Activity Monitor.
                         ForEach(suggestion.actions.filter { $0.isAvailable && $0 != .openActivityMonitor }, id: \.self) { action in
@@ -135,6 +143,10 @@ private struct SuggestionList: View {
             }
             if suggestions.count > 3 { Text("\(suggestions.count - 3) more in the menu").font(.caption2).foregroundStyle(.secondary) }
         }
+    }
+
+    private func toggle(_ id: String) {
+        if expanded.remove(id) == nil { expanded.insert(id) }
     }
 }
 

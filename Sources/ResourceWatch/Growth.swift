@@ -17,12 +17,12 @@ struct GrowthReport: Equatable, Sendable {
 
 /// Attributes file-size changes to folders under home, per minute, for a rolling window.
 struct GrowthLedger {
-    enum Change: Equatable { case created(Int64), modified(Int64), removed, renamed(Int64?), unmeasured }
+    enum Change: Equatable { case created(Int64), modified(Int64), removed, unmeasured }
 
     let home: String
     var maxDepth = 8
     var maxFiles = 300_000
-    var incomplete = false
+    var lastDrop: Date?
     private struct Bucket {
         var bytes: Int64 = 0
         var changes = 0
@@ -44,6 +44,7 @@ struct GrowthLedger {
         var delta: Int64 = 0
         switch change {
         case .created(let size):
+            // Also a file moved in. FSEvents does not pair the two names of a move, so the old name counts as removed and the new one as created.
             delta = size - (known ?? 0)
             remember(path, size)
         case .modified(let size):
@@ -53,10 +54,6 @@ struct GrowthLedger {
         case .removed:
             delta = -(known ?? 0)
             sizes[path] = nil
-        case .renamed(let size):
-            // FSEvents does not pair the old and new names, so a move never counts as growth.
-            sizes[path] = nil
-            if let size { remember(path, size) }
         case .unmeasured:
             break
         }
@@ -92,15 +89,17 @@ struct GrowthLedger {
             .map { GrowthEntry(path: $0.key, bytes: 0, changes: $0.value, measured: false) }
             .sorted { $0.changes > $1.changes }
         let total = totals.filter { depth($0.key) == 1 }.values.filter { $0 > 0 }.reduce(0, +)
+        let incomplete = lastDrop.map { now.timeIntervalSince($0) <= window } ?? false
         return GrowthReport(entries: Array(entries.prefix(5)), unmeasured: Array(unmeasured.prefix(3)), total: total, incomplete: incomplete)
     }
 
     /// Expands a folder into its growing subfolders while they hold most of its growth; otherwise reports the folder itself.
+    /// Below the top levels, only a single dominant subfolder is followed, so deep splits report their common parent.
     private func explain(_ node: String, totals: [String: Int64], minimum: Int64) -> [String] {
         let children = depth(node) < maxDepth ? totals.filter { $0.value >= minimum && parent($0.key) == node } : [:]
         let own = node == home ? children.values.reduce(0, +) : totals[node] ?? 0
         if node != home, own < minimum { return [] }
-        if !children.isEmpty, children.values.reduce(0, +) * 5 >= own * 4 {
+        if !children.isEmpty, children.count == 1 || depth(node) < 3, children.values.reduce(0, +) * 5 >= own * 4 {
             return children.keys.flatMap { explain($0, totals: totals, minimum: minimum) }
         }
         return node == home ? [] : [node]
@@ -198,7 +197,7 @@ final class GrowthTracker: @unchecked Sendable {
         // A batch often repeats one file many times; merging its flags needs one lstat per file, not one per event.
         var merged: [String: FSEventStreamEventFlags] = [:], order: [String] = []
         for (path, flag) in zip(paths, flags) {
-            if flag & FSEventStreamEventFlags(kFSEventStreamEventFlagMustScanSubDirs) != 0 { ledger.incomplete = true }
+            if flag & FSEventStreamEventFlags(kFSEventStreamEventFlagMustScanSubDirs) != 0 { ledger.lastDrop = now }
             guard flag & FSEventStreamEventFlags(kFSEventStreamEventFlagItemIsFile) != 0 else { continue }
             if merged[path] == nil { order.append(path) }
             merged[path, default: 0] |= flag
@@ -218,11 +217,9 @@ final class GrowthTracker: @unchecked Sendable {
                                                         | kFSEventStreamEventFlagItemInodeMetaMod | kFSEventStreamEventFlagItemXattrMod)
 
     static func change(_ flag: FSEventStreamEventFlags, size: Int64?) -> GrowthLedger.Change {
-        let created = flag & FSEventStreamEventFlags(kFSEventStreamEventFlagItemCreated) != 0
-        let renamed = flag & FSEventStreamEventFlags(kFSEventStreamEventFlagItemRenamed) != 0
-        guard let size else { return renamed ? .renamed(nil) : .removed }
-        if created { return .created(size) }
-        return renamed ? .renamed(size) : .modified(size)
+        guard let size else { return .removed }
+        let arrived = FSEventStreamEventFlags(kFSEventStreamEventFlagItemCreated | kFSEventStreamEventFlagItemRenamed)
+        return flag & arrived != 0 ? .created(size) : .modified(size)
     }
 
     private static func allocatedSize(_ path: String) -> Int64? {
@@ -237,7 +234,7 @@ enum GrowthAdvisor {
         let caveat = "ResourceWatch measures file changes in your home folder since it started." + (report.incomplete ? " macOS dropped some file events, so the numbers can be low." : "")
         let measured = report.entries.map { entry -> Recommendation in
             let target = targets.first { entry.path.hasPrefix((home as NSString).appendingPathComponent($0.path)) }
-            var detail = ["Files in this folder grew by \(StorageAdvisor.format(entry.bytes)) in the last hour (\(entry.changes.formatted()) file changes)."]
+            var detail = ["Files in this folder grew by \(StorageAdvisor.format(entry.bytes)) in the last hour (\(entry.changes.formatted()) file change\(entry.changes == 1 ? "" : "s"))."]
             detail += target?.advice.components(separatedBy: "\n") ?? []
             detail.append(caveat)
             var actions: [Recommendation.Action] = FileManager.default.fileExists(atPath: entry.path) ? [.reveal(entry.path)] : []
