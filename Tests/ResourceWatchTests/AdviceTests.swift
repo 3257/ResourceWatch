@@ -16,7 +16,7 @@ private func sample(_ pid: Int32, _ parent: Int32, _ name: String, gib: Double, 
         sample(201, 200, "login", gib: 0),
         sample(202, 201, "zsh", gib: 0),
         sample(203, 202, "swift-build", gib: 0.5),
-        sample(204, 203, "swift-frontend", gib: 2),
+        sample(204, 203, "swift-frontend", gib: 2)
     ]
     let groups = Advisor.groups(samples)
     let chrome = try #require(groups.first { $0.name == "Google Chrome" })

@@ -52,7 +52,7 @@ private func write(_ url: URL, bytes: Int) throws {
         StorageFinding(id: "a", title: "Medium", path: "/tmp/a", bytes: 2_000_000_000, detail: ["A."]),
         StorageFinding(id: "b", title: "Small", path: "/tmp/b", bytes: 500_000_000, detail: []),
         StorageFinding(id: "c", title: "Huge", path: "/tmp/c", bytes: 5_000_000_000, complete: false, detail: ["C."], command: "tool clean"),
-        StorageFinding(id: "d", title: "Records", path: "/tmp/d", bytes: nil, detail: []),
+        StorageFinding(id: "d", title: "Records", path: "/tmp/d", bytes: nil, detail: [])
     ]
     let advice = StorageAdvisor.advice(findings)
     #expect(advice.map(\.title) == ["Huge — at least 5.0 GB", "Medium — 2.0 GB", "Records"])
@@ -90,7 +90,7 @@ private func git(_ arguments: [String], in folder: URL) throws -> String {
     let data = output.fileHandleForReading.readDataToEndOfFile()
     process.waitUntilExit()
     #expect(process.terminationStatus == 0, "git \(arguments.joined(separator: " "))")
-    return String(decoding: data, as: UTF8.self)
+    return String(bytes: data, encoding: .utf8) ?? ""
 }
 
 private func project(in derivedData: URL, _ name: String, workspace: String, bytes: Int) throws {
@@ -99,9 +99,8 @@ private func project(in derivedData: URL, _ name: String, workspace: String, byt
     try PropertyListSerialization.data(fromPropertyList: ["WorkspacePath": workspace], format: .xml, options: 0).write(to: folder.appending(path: "info.plist"))
 }
 
-@Test func worktreeCheckFlagsMergedIdleAndMissingWorktrees() throws {
-    let root = try canonical(temporaryFolder())
-    defer { try? FileManager.default.removeItem(at: root) }
+/// A repo with a merged worktree, an unmerged one, and one whose folder was deleted.
+private func worktreeFixture(_ root: URL) throws -> URL {
     let repo = root.appending(path: "repo")
     try FileManager.default.createDirectory(at: repo, withIntermediateDirectories: true)
     try git(["init", "-q", "-b", "main"], in: repo)
@@ -116,7 +115,13 @@ private func project(in derivedData: URL, _ name: String, workspace: String, byt
     try git(["add", "."], in: root.appending(path: "wt-active")); try git(["commit", "-qm", "active"], in: root.appending(path: "wt-active"))
     try git(["worktree", "add", "-q", "-b", "feature/gone", "../wt-gone"], in: repo)
     try FileManager.default.removeItem(at: root.appending(path: "wt-gone"))
+    return repo
+}
 
+@Test func worktreeCheckFlagsMergedIdleAndMissingWorktrees() throws {
+    let root = try canonical(temporaryFolder())
+    defer { try? FileManager.default.removeItem(at: root) }
+    let repo = try worktreeFixture(root)
     #expect(WorktreeReader.repositories(in: root).map(\.path) == [repo.path])
     let trees = WorktreeReader.worktrees(repository: repo)
     #expect(trees.map(\.branch) == ["feature/active", "feature/done", "feature/gone"])

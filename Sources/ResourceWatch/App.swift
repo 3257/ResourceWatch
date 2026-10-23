@@ -220,8 +220,7 @@ struct ResourceWatchApp: App {
                     ForEach(Array(monitor.networkDetails.enumerated()), id: \.offset) { _, line in Text(line) }
                 }
                 Menu(monitor.storageCleanupSummary) {
-                    if monitor.isScanning { Text("Scanning…") }
-                    else if let last = monitor.lastStorageScan { Text("Last scanned \(last.formatted(date: .omitted, time: .shortened))") }
+                    if monitor.isScanning { Text("Scanning…") } else if let last = monitor.lastStorageScan { Text("Last scanned \(last.formatted(date: .omitted, time: .shortened))") }
                     Button("Scan now") { monitor.scanStorage(trigger: .manual) }.disabled(monitor.isScanning)
                     if !monitor.storageAdvice.isEmpty { Divider() }
                     ForEach(monitor.storageAdvice) { RecommendationMenu(recommendation: $0, monitor: monitor) }

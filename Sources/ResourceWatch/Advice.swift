@@ -20,7 +20,7 @@ struct Recommendation: Identifiable, Equatable, Sendable {
     var id: String
     var title: String
     var detail: [String]
-    var bytes: Int64? = nil
+    var bytes: Int64?
     var actions: [Action] = []
 }
 

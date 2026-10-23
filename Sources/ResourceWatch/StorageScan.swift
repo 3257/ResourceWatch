@@ -4,10 +4,10 @@ struct StorageTarget: Sendable {
     var name: String
     var path: String
     var advice: String
-    var command: String? = nil
+    var command: String?
     // Folders behind macOS privacy prompts; scanned only after the user starts a scan once.
     var protected = false
-    var olderThanDays: Int? = nil
+    var olderThanDays: Int?
 
     static let catalog: [StorageTarget] = [
         .init(name: "Xcode DerivedData", path: "Library/Developer/Xcode/DerivedData", advice: "Build products and indexes. Xcode rebuilds them when needed."),
@@ -24,7 +24,7 @@ struct StorageTarget: Sendable {
         .init(name: "Gradle caches", path: ".gradle/caches", advice: "Gradle downloads dependencies again when needed."),
         .init(name: "Trash", path: ".Trash", advice: "Empty the Trash in Finder to free this space."),
         .init(name: "iPhone and iPad backups", path: "Library/Application Support/MobileSync/Backup", advice: "Delete old backups in Finder: select the device, then Manage Backups."),
-        .init(name: "Old downloads", path: "Downloads", advice: "Top-level items in Downloads unchanged for 30 days.", protected: true, olderThanDays: 30),
+        .init(name: "Old downloads", path: "Downloads", advice: "Top-level items in Downloads unchanged for 30 days.", protected: true, olderThanDays: 30)
     ]
 }
 
@@ -35,7 +35,7 @@ struct StorageFinding: Equatable, Sendable {
     var bytes: Int64?
     var complete = true
     var detail: [String]
-    var command: String? = nil
+    var command: String?
 }
 
 enum ScanTrigger: Sendable { case manual, daily, storageAlert }

@@ -119,6 +119,6 @@ enum WorktreeReader {
         do { try process.run() } catch { return nil }
         let data = output.fileHandleForReading.readDataToEndOfFile()
         process.waitUntilExit()
-        return process.terminationStatus == 0 ? String(decoding: data, as: UTF8.self) : nil
+        return process.terminationStatus == 0 ? String(bytes: data, encoding: .utf8) : nil
     }
 }
