@@ -52,6 +52,7 @@ private struct MiniPanelView: View {
                     tile(.storage, symbol: "internaldrive", value: String(format: "%.0f GB", Double(m.free) / 1e9), detail: "Free on home volume", fraction: m.total > 0 ? 1 - Double(m.free) / Double(m.total) : 0)
                 }
                 Sparkline(values: monitor.cpuHistory).stroke(Color.accentColor, style: StrokeStyle(lineWidth: 1.5, lineJoin: .round)).frame(height: 26).accessibilityLabel("CPU history, up to ten minutes")
+                if !monitor.suggestions.isEmpty { SuggestionList(suggestions: monitor.suggestions, perform: monitor.perform) }
                 if let selected { details(selected, m) }
             } else { Text("Collecting first sample…").foregroundStyle(.secondary) }
             HStack {
@@ -98,6 +99,35 @@ private struct MiniPanelView: View {
     }
     private func rate(_ value: Double) -> String {
         value >= 1e6 ? String(format: "%.1f MB/s", value / 1e6) : String(format: "%.0f KB/s", value / 1e3)
+    }
+}
+
+private struct SuggestionList: View {
+    let suggestions: [Recommendation]
+    let perform: (Recommendation.Action) -> Void
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Suggestions").font(.caption.bold())
+            ForEach(suggestions.prefix(3)) { suggestion in
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(suggestion.title).font(.caption)
+                    Text(suggestion.detail.filter { !$0.hasPrefix("Command: ") }.joined(separator: "\n")).font(.caption2).foregroundStyle(.secondary)
+                    HStack {
+                        ForEach(suggestion.actions.filter(\.isAvailable), id: \.self) { action in
+                            Button(action.title) { perform(action) }.help(action.help)
+                        }
+                    }.buttonStyle(.bordered).controlSize(.small)
+                }.textSelection(.enabled)
+            }
+            if suggestions.count > 3 { Text("\(suggestions.count - 3) more in the menu").font(.caption2).foregroundStyle(.secondary) }
+        }
+    }
+}
+
+private extension Recommendation.Action {
+    var help: String {
+        if case .copy(let command) = self { return "Copies: \(command)" }
+        return title
     }
 }
 

@@ -305,7 +305,7 @@ private struct RecommendationMenu: View {
     }
 }
 
-private extension Recommendation.Action {
+extension Recommendation.Action {
     var isAvailable: Bool {
         if case .activate(let pid) = self { return NSRunningApplication(processIdentifier: pid) != nil }
         return true
