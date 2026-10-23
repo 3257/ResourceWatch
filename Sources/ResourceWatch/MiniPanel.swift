@@ -52,7 +52,7 @@ private struct MiniPanelView: View {
                     tile(.storage, symbol: "internaldrive", value: String(format: "%.0f GB", Double(m.free) / 1e9), detail: "Free on home volume", fraction: m.total > 0 ? 1 - Double(m.free) / Double(m.total) : 0)
                 }
                 Sparkline(values: monitor.cpuHistory).stroke(Color.accentColor, style: StrokeStyle(lineWidth: 1.5, lineJoin: .round)).frame(height: 26).accessibilityLabel("CPU history, up to ten minutes")
-                if !monitor.suggestions.isEmpty { SuggestionList(suggestions: monitor.suggestions, perform: monitor.perform) }
+                if !monitor.suggestions.isEmpty { SuggestionList(suggestions: monitor.suggestions, agents: monitor.agents, perform: monitor.perform, ask: monitor.ask) }
                 if let selected { details(selected, m) }
             } else { Text("Collecting first sample…").foregroundStyle(.secondary) }
             HStack {
@@ -104,7 +104,9 @@ private struct MiniPanelView: View {
 
 private struct SuggestionList: View {
     let suggestions: [Recommendation]
+    let agents: [AIAgent]
     let perform: (Recommendation.Action) -> Void
+    let ask: (AIAgent, Recommendation) -> Void
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Suggestions").font(.caption.bold())
@@ -117,6 +119,11 @@ private struct SuggestionList: View {
                         // The panel footer already opens Activity Monitor.
                         ForEach(suggestion.actions.filter { $0.isAvailable && $0 != .openActivityMonitor }, id: \.self) { action in
                             Button(action.title) { perform(action) }.help(action.help)
+                        }
+                        if !agents.isEmpty {
+                            Menu("Ask AI") {
+                                ForEach(agents, id: \.self) { agent in Button(agent.name) { ask(agent, suggestion) } }
+                            }.menuStyle(.button).fixedSize().help("Open a terminal session with this suggestion as the question")
                         }
                     }.buttonStyle(.bordered).controlSize(.small)
                 }.textSelection(.enabled)

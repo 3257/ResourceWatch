@@ -61,7 +61,10 @@ enum Advisor {
             if group.members.count > 1 { title += " in \(group.members.count) processes" }
             if group.cpu >= settings.processCPUPercent { title += String(format: " · %.0f%% CPU", group.cpu) }
             let tip = tip(for: group)
-            var detail: [String] = []
+            var detail = tip.about
+            if m.memoryTotal > 0 {
+                detail.append(String(format: "Uses %.0f%% of your %.0f GiB RAM.", Double(group.memory) / Double(m.memoryTotal) * 100, Double(m.memoryTotal) / gib))
+            }
             if group.members.count > 1, let largest = group.largest {
                 detail.append(String(format: "Largest: %@ — %.1f GiB, PID %d", largest.name, Double(largest.memory) / gib, largest.pid))
             }
@@ -82,26 +85,49 @@ enum Advisor {
     }
 
     private static func displayName(_ name: String) -> String {
-        name.hasPrefix("com.apple.WebKit") ? "Safari and WebKit pages" : name
+        if name.hasPrefix("com.apple.WebKit") { return "Safari and WebKit pages" }
+        return name == "launchd_sim" ? "Running simulators" : name
     }
 
-    private static func tip(for group: AppGroup) -> (text: String, actions: [Recommendation.Action]) {
+    private struct Tip {
+        var about: [String]
+        var text: String
+        var actions: [Recommendation.Action]
+    }
+
+    private static func tip(for group: AppGroup) -> Tip {
         let name = group.name
         if chromium.contains(where: { name.hasPrefix($0) }) {
-            return ("Open the browser's Task Manager (Shift+Esc) to find the tab or extension.", [.activate(group.rootPID)])
+            return Tip(about: ["\(name) runs each tab, extension and the GPU in a separate helper process.",
+                               "Video, maps and large web apps such as Gmail keep a tab's memory high."],
+                       text: "Open the browser's Task Manager (Shift+Esc), sort by memory, then close or reload the largest tabs.",
+                       actions: [.activate(group.rootPID)])
         }
         if name == "Safari" || name == "Safari and WebKit pages" {
-            return ("Close unused tabs. Activity Monitor shows the site name for each tab process.", [.openActivityMonitor])
+            return Tip(about: ["Safari, and apps that show web content, run each page in a separate WebKit process.",
+                               "Video, maps and large web apps such as Gmail keep a page's memory high."],
+                       text: "Close unused tabs. Activity Monitor shows the site name for each page process.",
+                       actions: [.openActivityMonitor])
         }
         if name == "Xcode" || name == "SourceKitService" {
-            return ("Restart Xcode to release indexer and build memory.", name == "Xcode" ? [.activate(group.rootPID)] : [.openActivityMonitor])
+            return Tip(about: ["Xcode, SourceKitService and the indexer use more memory in large projects and long sessions."],
+                       text: "Restart Xcode to release that memory. Your project and settings stay.",
+                       actions: name == "Xcode" ? [.activate(group.rootPID)] : [.openActivityMonitor])
         }
-        if name == "Simulator" || name == "launchd_sim" {
-            return ("Shut down simulators you are not using.", [.copy("xcrun simctl shutdown all")])
+        if name == "Simulator" || name == "Running simulators" {
+            let running = group.members.filter { $0.name == "launchd_sim" }.count
+            return Tip(about: ["Each running simulator starts a full set of iOS system processes, such as SpringBoard."]
+                           + (running > 0 ? ["\(running) simulator\(running == 1 ? " is" : "s are") running."] : []),
+                       text: "Shut down simulators you do not use. The command shuts down all of them; their apps and data stay.",
+                       actions: [.copy("xcrun simctl shutdown all")])
         }
         if name.hasPrefix("com.docker") || name.hasPrefix("Docker") || name.contains("qemu") || name.contains("Virtualization") {
-            return ("Stop idle containers or lower Docker's memory limit.", [.copy("docker stop $(docker ps -q)")])
+            return Tip(about: ["Docker Desktop runs a Linux virtual machine. The machine keeps its memory, up to the Docker limit, even when containers are idle."],
+                       text: "Stop idle containers, or lower the limit in Docker Desktop → Settings → Resources. The command stops all running containers.",
+                       actions: [.copy("docker stop $(docker ps -q)")])
         }
-        return ("Quit or restart \(name) if you do not need it now.", [.activate(group.rootPID), .openActivityMonitor])
+        return Tip(about: ["\(name) and its helper processes use this memory."],
+                   text: "Quit or restart \(name) if you do not need it now. A restart often releases memory that grew during a long session.",
+                   actions: [.activate(group.rootPID), .openActivityMonitor])
     }
 }

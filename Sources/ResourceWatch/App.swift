@@ -26,6 +26,7 @@ final class Monitor: ObservableObject {
     @Published var storageAdvice: [Recommendation] = []
     @Published var lastStorageScan: Date?
     @Published var isScanning = false
+    @Published var agents: [AIAgent] = []
     var warningSummary: [String] {
         if let samplingError { return ["Monitoring unavailable: \(samplingError)"] }
         guard let latest else { return [] }
@@ -72,6 +73,7 @@ final class Monitor: ObservableObject {
     init() { start() }
     func start() {
         guard task == nil else { return }
+        Task { agents = await Task.detached(priority: .utility) { AIAgents.detect() }.value }
         let sampler = SamplingWorker()
         task = Task {
             while !Task.isCancelled {
@@ -148,6 +150,21 @@ final class Monitor: ObservableObject {
         guard panel.runModal() == .OK else { return }
         let folders = panel.urls.map { ($0.path as NSString).abbreviatingWithTildeInPath }
         settings.projectFolders += folders.filter { !settings.projectFolders.contains($0) }
+    }
+    func ask(_ agent: AIAgent, about recommendation: Recommendation) {
+        let gib = Double(1 << 30)
+        var context = "Mac: macOS \(ProcessInfo.processInfo.operatingSystemVersionString)"
+        if let m = latest {
+            context += String(format: ", %.1f of %.0f GiB RAM used, memory pressure %@, swap %.1f GiB, %.0f of %.0f GB storage free.",
+                              Double(m.memoryUsed) / gib, Double(m.memoryTotal) / gib, m.pressure >= 4 ? "critical" : m.pressure >= 2 ? "warning" : "normal",
+                              Double(m.swap) / gib, Double(m.free) / 1e9, Double(m.total) / 1e9)
+        }
+        let worktree = recommendation.id.hasPrefix("storage-worktree-") ? recommendation.actions.compactMap { if case .reveal(let path) = $0 { path } else { nil } }.first : nil
+        do {
+            try AIAgents.launch(agent, prompt: AIAgents.prompt(for: recommendation, context: context), directory: worktree ?? NSHomeDirectory())
+        } catch {
+            events.insert("Could not start \(agent.name)\n\(error.localizedDescription)", at: 0)
+        }
     }
     func perform(_ action: Recommendation.Action) {
         switch action {
@@ -300,6 +317,11 @@ private struct RecommendationMenu: View {
             Divider()
             ForEach(recommendation.actions.filter(\.isAvailable), id: \.self) { action in
                 Button(action.title) { monitor.perform(action) }
+            }
+            if !monitor.agents.isEmpty {
+                Menu("Ask AI in Terminal") {
+                    ForEach(monitor.agents, id: \.self) { agent in Button(agent.name) { monitor.ask(agent, about: recommendation) } }
+                }
             }
         }
     }

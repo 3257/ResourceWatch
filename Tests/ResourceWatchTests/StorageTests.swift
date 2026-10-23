@@ -152,7 +152,7 @@ private func worktreeFixture(_ root: URL) throws -> URL {
     #expect(withBuilds.detail.contains { $0.hasPrefix("Includes 0.0 GB of Xcode DerivedData") })
     #expect(withBuilds.command?.hasSuffix("/wt-done' && rm -rf '\(derivedData.path)/App-abc'") == true)
     let orphans = try #require(DerivedDataReader.orphans(projects, derivedData: derivedData))
-    #expect(orphans.detail == ["1 folder whose project no longer exists: Gone.xcodeproj"])
+    #expect(orphans.detail.last == "1 folder whose project no longer exists: Gone.xcodeproj")
     #expect(orphans.command == "rm -rf '\(derivedData.path)/Gone-xyz'")
     #expect((orphans.bytes ?? 0) >= 300_000 && (orphans.bytes ?? 0) < 500_000)
 

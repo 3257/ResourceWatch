@@ -10,22 +10,39 @@ struct StorageTarget: Sendable {
     var olderThanDays: Int?
 
     static let catalog: [StorageTarget] = [
-        .init(name: "Xcode DerivedData", path: "Library/Developer/Xcode/DerivedData", advice: "Build products and indexes. Xcode rebuilds them when needed."),
-        .init(name: "Xcode Archives", path: "Library/Developer/Xcode/Archives", advice: "Keep archives of shipped builds that you may need to symbolicate."),
-        .init(name: "iOS DeviceSupport", path: "Library/Developer/Xcode/iOS DeviceSupport", advice: "Symbols for device OS versions. Xcode copies them again when you reconnect a device."),
-        .init(name: "watchOS DeviceSupport", path: "Library/Developer/Xcode/watchOS DeviceSupport", advice: "Symbols for device OS versions. Xcode copies them again when you reconnect a device."),
-        .init(name: "tvOS DeviceSupport", path: "Library/Developer/Xcode/tvOS DeviceSupport", advice: "Symbols for device OS versions. Xcode copies them again when you reconnect a device."),
-        .init(name: "Simulator devices", path: "Library/Developer/CoreSimulator/Devices", advice: "Remove simulators whose runtime is no longer installed.", command: "xcrun simctl delete unavailable"),
-        .init(name: "Swift Package Manager cache", path: "Library/Caches/org.swift.swiftpm", advice: "Downloaded package sources. Xcode downloads them again when needed."),
-        .init(name: "Xcode cache", path: "Library/Caches/com.apple.dt.Xcode", advice: "Xcode recreates this cache."),
-        .init(name: "Homebrew cache", path: "Library/Caches/Homebrew", advice: "Old downloads of installed formulae.", command: "brew cleanup --prune=all"),
-        .init(name: "CocoaPods cache", path: "Library/Caches/CocoaPods", advice: "CocoaPods downloads pods again when needed.", command: "pod cache clean --all"),
-        .init(name: "npm cache", path: ".npm", advice: "npm downloads packages again when needed.", command: "npm cache clean --force"),
-        .init(name: "Gradle caches", path: ".gradle/caches", advice: "Gradle downloads dependencies again when needed."),
-        .init(name: "Trash", path: ".Trash", advice: "Empty the Trash in Finder to free this space."),
-        .init(name: "iPhone and iPad backups", path: "Library/Application Support/MobileSync/Backup", advice: "Delete old backups in Finder: select the device, then Manage Backups."),
-        .init(name: "Old downloads", path: "Downloads", advice: "Top-level items in Downloads unchanged for 30 days.", protected: true, olderThanDays: 30)
+        .init(name: "Xcode DerivedData", path: "Library/Developer/Xcode/DerivedData",
+              advice: "Xcode keeps build products, indexes and logs here for each project.\nDeleting it is safe. The next build of each project takes longer.\nQuit Xcode first, then delete the contents of the folder."),
+        .init(name: "Xcode Archives", path: "Library/Developer/Xcode/Archives",
+              advice: "Xcode keeps an archive of each build that you exported or uploaded.\nKeep archives of shipped builds if you need their symbols for crash reports.\nDelete old archives in Xcode → Window → Organizer."),
+        .init(name: "iOS DeviceSupport", path: "Library/Developer/Xcode/iOS DeviceSupport", advice: deviceSupport),
+        .init(name: "watchOS DeviceSupport", path: "Library/Developer/Xcode/watchOS DeviceSupport", advice: deviceSupport),
+        .init(name: "tvOS DeviceSupport", path: "Library/Developer/Xcode/tvOS DeviceSupport", advice: deviceSupport),
+        .init(name: "Simulator devices", path: "Library/Developer/CoreSimulator/Devices",
+              advice: "Each simulator keeps its own apps, data and caches here.\nThe command removes only simulators whose runtime is no longer installed.\nRemove other simulators in Xcode → Window → Devices and Simulators.",
+              command: "xcrun simctl delete unavailable"),
+        .init(name: "Swift Package Manager cache", path: "Library/Caches/org.swift.swiftpm",
+              advice: "Swift Package Manager keeps downloaded package repositories here.\nDeleting it is safe. Xcode downloads the packages again on the next resolve, which is slow for large projects."),
+        .init(name: "Xcode cache", path: "Library/Caches/com.apple.dt.Xcode",
+              advice: "Xcode keeps download and documentation caches here.\nDeleting it is safe. Quit Xcode first."),
+        .init(name: "Homebrew cache", path: "Library/Caches/Homebrew",
+              advice: "Homebrew keeps the downloads of installed packages and old versions here.\nThe command removes all cached downloads and old versions.",
+              command: "brew cleanup --prune=all"),
+        .init(name: "CocoaPods cache", path: "Library/Caches/CocoaPods",
+              advice: "CocoaPods keeps downloaded pods here.\nThe command empties the cache. CocoaPods downloads pods again on the next install.",
+              command: "pod cache clean --all"),
+        .init(name: "npm cache", path: ".npm",
+              advice: "npm keeps downloaded packages here.\nThe command empties the cache. npm downloads packages again when needed.",
+              command: "npm cache clean --force"),
+        .init(name: "Gradle caches", path: ".gradle/caches",
+              advice: "Gradle keeps downloaded dependencies and build caches here.\nDeleting it is safe when no Gradle build runs. The next build downloads dependencies again."),
+        .init(name: "Trash", path: ".Trash", advice: "Files in the Trash still use disk space.\nEmpty the Trash in Finder to free it."),
+        .init(name: "iPhone and iPad backups", path: "Library/Application Support/MobileSync/Backup",
+              advice: "Finder keeps full backups of iPhones and iPads here.\nDelete old backups in Finder: select the device, then Manage Backups."),
+        .init(name: "Old downloads", path: "Downloads",
+              advice: "Top-level items in Downloads that did not change for 30 days.\nCheck the items and keep what you need before you delete the rest.",
+              protected: true, olderThanDays: 30)
     ]
+    private static let deviceSupport = "Xcode copies debug symbols here for each OS version of a device that you connect.\nDelete the folders of OS versions that you no longer debug. Xcode copies them again when needed."
 }
 
 struct StorageFinding: Equatable, Sendable {
@@ -78,7 +95,7 @@ enum StorageScanner {
             guard FileManager.default.fileExists(atPath: url.path) else { return nil }
             let deadline = Date().addingTimeInterval(timeLimit)
             var size: (bytes: Int64, complete: Bool)
-            var detail = [target.advice]
+            var detail = target.advice.components(separatedBy: "\n")
             if let days = target.olderThanDays {
                 let cutoff = now.addingTimeInterval(-Double(days) * 86_400)
                 let old = ((try? FileManager.default.contentsOfDirectory(at: url, includingPropertiesForKeys: [.contentModificationDateKey])) ?? []).filter {

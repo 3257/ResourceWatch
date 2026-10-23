@@ -39,9 +39,12 @@ private func sample(_ pid: Int32, _ parent: Int32, _ name: String, gib: Double, 
 @Test func adviceNamesTheGroupTheLargestChildAndATip() throws {
     var m = Metrics(cpu: 10, pressure: 1, swap: 0, free: 0, total: 0, processes: "")
     m.processSamples = [sample(100, 1, "Google Chrome", gib: 1), sample(101, 100, "Google Chrome Helper (Renderer)", gib: 5), sample(102, 100, "Google Chrome Helper (Renderer)", gib: 3), sample(300, 1, "Notes", gib: 0.3)]
+    m.memoryTotal = 36 << 30
     let advice = Advisor.processAdvice(m, settings: WatchSettings())
     let chrome = try #require(advice.first)
     #expect(advice.count == 1)
+    #expect(chrome.detail.first == "Google Chrome runs each tab, extension and the GPU in a separate helper process.")
+    #expect(chrome.detail.contains("Uses 25% of your 36 GiB RAM."))
     #expect(chrome.title == "Google Chrome: 9.0 GiB RAM in 3 processes")
     #expect(chrome.detail.contains("Largest: Google Chrome Helper (Renderer) — 5.0 GiB, PID 101"))
     #expect(chrome.detail.contains { $0.contains("Task Manager (Shift+Esc)") })
@@ -53,7 +56,8 @@ private func sample(_ pid: Int32, _ parent: Int32, _ name: String, gib: Double, 
     var m = Metrics(cpu: 10, pressure: 1, swap: 0, free: 0, total: 0, processes: "")
     m.processSamples = [sample(50, 1, "launchd_sim", gib: 0.1, cpu: 90), sample(51, 50, "SpringBoard", gib: 0.1, cpu: 90)]
     let advice = Advisor.processAdvice(m, settings: WatchSettings())
-    #expect(advice.map(\.title) == ["launchd_sim: 0.2 GiB RAM in 2 processes · 180% CPU"])
+    #expect(advice.map(\.title) == ["Running simulators: 0.2 GiB RAM in 2 processes · 180% CPU"])
+    #expect(advice.first?.detail.contains("1 simulator is running.") == true)
     #expect(advice.first?.actions == [.copy("xcrun simctl shutdown all")])
     #expect(advice.first?.detail.last == "Command: xcrun simctl shutdown all")
     m.processSamples = [sample(50, 1, "launchd_sim", gib: 0.1, cpu: 40)]

@@ -30,7 +30,8 @@ enum DerivedDataReader {
         let sizes = orphans.map { StorageScanner.allocatedSize($0.folder, deadline: deadline) }
         return StorageFinding(id: "derived-orphans", title: "Xcode DerivedData for deleted projects", path: derivedData.path,
                               bytes: sizes.reduce(0) { $0 + $1.bytes }, complete: sizes.allSatisfy(\.complete),
-                              detail: ["\(orphans.count) folder\(orphans.count == 1 ? "" : "s") whose project no longer exists: " + orphans.map { ($0.workspace as NSString).lastPathComponent }.joined(separator: ", ")],
+                              detail: ["Xcode keeps DerivedData after you delete or move a project. Nothing uses these folders now.",
+                                       "\(orphans.count) folder\(orphans.count == 1 ? "" : "s") whose project no longer exists: " + orphans.map { ($0.workspace as NSString).lastPathComponent }.joined(separator: ", ")],
                               command: "rm -rf " + orphans.map { WorktreeReader.quote($0.folder.path) }.joined(separator: " "))
     }
 }
@@ -101,7 +102,8 @@ enum WorktreeReader {
                 if !builds.isEmpty { command += " && rm -rf " + builds.map { quote($0.folder.path) }.joined(separator: " ") }
                 result.append(StorageFinding(id: "worktree-\(tree.path.path)", title: "Worktree \(tree.branch ?? tree.path.lastPathComponent) (\(repository.lastPathComponent))", path: tree.path.path,
                                              bytes: size.bytes + buildBytes, complete: size.complete && buildSizes.allSatisfy(\.complete),
-                                             detail: reasons + ["Git refuses to remove a worktree with uncommitted or untracked changes."],
+                                             detail: reasons + ["The command removes the worktree folder\(builds.isEmpty ? "" : " and its DerivedData"). The branch and its commits stay in the repository.",
+                                                                "Git refuses to remove a worktree with uncommitted or untracked changes."],
                                              command: command))
             }
             return result
