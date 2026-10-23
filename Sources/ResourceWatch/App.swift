@@ -21,6 +21,8 @@ final class Monitor: ObservableObject {
     @Published var cpuHistory: [Double] = []
     @Published var currentWarnings: [String] = []
     @Published var samplingError: String?
+    @Published var processAdvice: [Recommendation] = []
+    @Published var appGroups: [String] = []
     var warningSummary: [String] {
         if let samplingError { return ["Monitoring unavailable: \(samplingError)"] }
         guard let latest else { return [] }
@@ -28,6 +30,7 @@ final class Monitor: ObservableObject {
         if currentWarnings.contains("Storage growing quickly") { lines.append(String(format: "Storage fell by over %.0f GB within an hour", settings.diskGrowthGB)) }
         return lines
     }
+    var suggestions: [Recommendation] { processAdvice }
     private var miniPanel: MiniPanelController?
     var hasWarning: Bool { !warningSummary.isEmpty }
     let menuBarSymbol = "waveform.path.ecg"
@@ -91,16 +94,34 @@ final class Monitor: ObservableObject {
         memoryProcesses = m.processSamples.sorted { $0.memory > $1.memory }.prefix(5).map {
             "\($0.name) · \(String(format: "%.1f", Double($0.memory) / gib)) GiB · PID \($0.identity.split(separator: ":")[0])"
         }
+        processAdvice = Advisor.processAdvice(m, settings: settings)
+        appGroups = Advisor.groups(m.processSamples).prefix(3).map {
+            "\($0.name) · \(String(format: "%.1f", Double($0.memory) / gib)) GiB · \($0.members.count) process\($0.members.count == 1 ? "" : "es")"
+        }
         networkSummary = String(format: "Network: ↓ %.1f · ↑ %.1f MB/s", m.network.download / 1e6, m.network.upload / 1e6)
         networkDetails = [String(format: "Session: ↓ %.2f · ↑ %.2f GB", Double(m.network.received) / 1e9, Double(m.network.sent) / 1e9), "Interfaces: \(m.network.interfaces.joined(separator: ", "))", "Wi-Fi/Ethernet traffic, including local transfers"]
         status = String(format: "CPU %.0f%% · %.0f GB free", m.cpu, Double(m.free) / 1e9)
         details = String(format: "CPU: %.1f%% of all cores\nMemory pressure: %@\nSwap: %.2f GiB\nHome volume: %.1f / %.1f GB free\n\nTop CPU processes (100%% = one core):\n%@", m.cpu, m.pressure >= 4 ? "critical" : m.pressure >= 2 ? "warning" : "normal", Double(m.swap) / gib, Double(m.free) / 1e9, Double(m.total) / 1e9, m.processes)
         for alert in engine.evaluate(m, settings: settings, now: now) {
-            events.insert("\(now.formatted(date: .omitted, time: .shortened)) — \(alert.title)\n\(alert.body)", at: 0)
+            let body = hint(for: alert, m).map { alert.body + "\n" + $0 } ?? alert.body
+            events.insert("\(now.formatted(date: .omitted, time: .shortened)) — \(alert.title)\n\(body)", at: 0)
             events = Array(events.prefix(30))
-            send(alert.title, alert.body)
+            send(alert.title, body)
         }
         if engine.storageGrowthActive { currentWarnings.append("Storage growing quickly") }
+    }
+    private func hint(for alert: WatchAlert, _ m: Metrics) -> String? {
+        let parts = alert.key.split(separator: "-", maxSplits: 2)
+        if parts.count == 3, parts[0] == "process" { return Advisor.processHint(identity: String(parts[2]), samples: m.processSamples) }
+        return nil
+    }
+    func perform(_ action: Recommendation.Action) {
+        switch action {
+        case .reveal(let path): NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)])
+        case .copy(let command): NSPasteboard.general.clearContents(); NSPasteboard.general.setString(command, forType: .string)
+        case .activate(let pid): NSRunningApplication(processIdentifier: pid)?.activate()
+        case .openActivityMonitor: NSWorkspace.shared.open(URL(fileURLWithPath: "/System/Applications/Utilities/Activity Monitor.app"))
+        }
     }
     private func send(_ title: String, _ body: String, verify: Bool = false) {
         let content = UNMutableNotificationContent(); content.title = title; content.body = body; content.sound = .default
@@ -140,6 +161,12 @@ struct ResourceWatchApp: App {
                                 Label(warning, systemImage: "exclamationmark.triangle.fill")
                             }
                         }
+                    }
+                    Divider()
+                }
+                if !monitor.suggestions.isEmpty {
+                    Section("Suggestions") {
+                        ForEach(monitor.suggestions) { RecommendationMenu(recommendation: $0, monitor: monitor) }
                     }
                     Divider()
                 }
@@ -210,6 +237,27 @@ struct ResourceWatchApp: App {
                     }
                 }.formStyle(.grouped).frame(width: 450, height: 580).task { monitor.refreshPermission() }
         }.windowResizability(.contentSize)
+    }
+}
+
+private struct RecommendationMenu: View {
+    let recommendation: Recommendation
+    let monitor: Monitor
+    var body: some View {
+        Menu(recommendation.title) {
+            ForEach(recommendation.detail, id: \.self) { Text($0) }
+            Divider()
+            ForEach(recommendation.actions.filter(\.isAvailable), id: \.self) { action in
+                Button(action.title) { monitor.perform(action) }
+            }
+        }
+    }
+}
+
+private extension Recommendation.Action {
+    var isAvailable: Bool {
+        if case .activate(let pid) = self { return NSRunningApplication(processIdentifier: pid) != nil }
+        return true
     }
 }
 

@@ -3,6 +3,7 @@ import Foundation
 struct WatchAlert: Equatable {
     var title: String
     var body: String
+    var key = ""
 }
 
 struct AlertEngine {
@@ -27,7 +28,7 @@ struct AlertEngine {
         var alerts: [WatchAlert] = []
         func check(_ key: String, _ active: Bool, _ duration: TimeInterval, _ title: String, _ body: String) {
             if policy.evaluate(key, active: active, now: now, sustained: duration) {
-                alerts.append(WatchAlert(title: title, body: body))
+                alerts.append(WatchAlert(title: title, body: body, key: key))
             }
         }
         var keys: Set<String> = ["cpu", "memory", "disk", "growth", "network"]

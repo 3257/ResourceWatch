@@ -85,7 +85,8 @@ private struct MiniPanelView: View {
             case .cpu: Text(m.processes).font(.caption2)
             case .memory:
                 Text(monitor.memoryDetails + String(format: "\nSwap %.1f GiB", Double(m.swap) / gib)).font(.caption2)
-                ForEach(Array(monitor.memoryProcesses.prefix(3).enumerated()), id: \.offset) { _, row in Text(row).font(.caption2) }
+                Text("By app").font(.caption2.bold())
+                ForEach(Array(monitor.appGroups.enumerated()), id: \.offset) { _, row in Text(row).font(.caption2) }
             case .network:
                 ForEach(Array(monitor.networkDetails.enumerated()), id: \.offset) { _, row in Text(row).font(.caption2) }
             case .storage:
