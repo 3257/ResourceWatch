@@ -23,9 +23,13 @@ struct GrowthLedger {
     var maxDepth = 8
     var maxFiles = 300_000
     var incomplete = false
+    private struct Bucket {
+        var bytes: Int64 = 0
+        var changes = 0
+    }
     private var sizes: [String: Int64] = [:]
-    private var bytes: [Int: [String: Int64]] = [:]
-    private var changes: [Int: [String: Int]] = [:]
+    // Per minute, growth of each file's own folder only; the report rolls it up to parent folders.
+    private var minutes: [Int: [String: Bucket]] = [:]
     private var protectedChanges: [Int: [String: Int]] = [:]
 
     init(home: String) { self.home = home.hasSuffix("/") ? String(home.dropLast()) : home }
@@ -56,27 +60,31 @@ struct GrowthLedger {
         case .unmeasured:
             break
         }
-        for prefix in prefixes(path) {
-            changes[minute, default: [:]][prefix, default: 0] += 1
-            if delta != 0 { bytes[minute, default: [:]][prefix, default: 0] += delta }
-        }
+        guard let folder = folder(of: path) else { return }
+        minutes[minute, default: [:]][folder, default: Bucket()].changes += 1
+        minutes[minute, default: [:]][folder, default: Bucket()].bytes += delta
     }
 
     mutating func prune(before date: Date) {
         let oldest = Int(date.timeIntervalSince1970 / 60)
-        bytes = bytes.filter { $0.key >= oldest }
-        changes = changes.filter { $0.key >= oldest }
+        minutes = minutes.filter { $0.key >= oldest }
         protectedChanges = protectedChanges.filter { $0.key >= oldest }
     }
 
     func report(now: Date, window: TimeInterval = 3_600, minimumBytes: Int64 = 200_000_000, minimumChanges: Int = 2_000) -> GrowthReport {
         let oldest = Int(now.addingTimeInterval(-window).timeIntervalSince1970 / 60)
-        func sum<Value: AdditiveArithmetic>(_ buckets: [Int: [String: Value]]) -> [String: Value] {
-            buckets.filter { $0.key >= oldest }.values.reduce(into: [:]) { total, minute in
-                for (prefix, value) in minute { total[prefix, default: .zero] += value }
+        var totals: [String: Int64] = [:], counts: [String: Int] = [:], protectedCounts: [String: Int] = [:]
+        for (minute, folders) in minutes where minute >= oldest {
+            for (folder, bucket) in folders {
+                for ancestor in ancestors(folder) {
+                    totals[ancestor, default: 0] += bucket.bytes
+                    counts[ancestor, default: 0] += bucket.changes
+                }
             }
         }
-        let totals = sum(bytes), counts = sum(changes), protectedCounts = sum(protectedChanges)
+        for (minute, folders) in protectedChanges where minute >= oldest {
+            for (folder, count) in folders { protectedCounts[folder, default: 0] += count }
+        }
         let entries = explain(home, totals: totals, minimum: minimumBytes)
             .map { GrowthEntry(path: $0, bytes: totals[$0] ?? 0, changes: counts[$0] ?? 0) }
             .sorted { $0.bytes > $1.bytes }
@@ -110,9 +118,24 @@ struct GrowthLedger {
         if sizes[path] != nil || sizes.count < maxFiles { sizes[path] = size }
     }
 
-    private func prefixes(_ path: String) -> [String] {
-        let parts = path.dropFirst(home.count + 1).split(separator: "/").dropLast()
-        return (0..<min(parts.count, maxDepth)).map { home + "/" + parts[...$0].joined(separator: "/") }
+    /// The file's folder, cut to `maxDepth` levels below home; nil for a file directly in home.
+    private func folder(of path: String) -> String? {
+        var end: String.Index?, depth = 0
+        var index = path.utf8.index(path.startIndex, offsetBy: home.utf8.count + 1)
+        while depth < maxDepth, let slash = path.utf8[index...].firstIndex(of: UInt8(ascii: "/")) {
+            end = slash; depth += 1
+            index = path.utf8.index(after: slash)
+        }
+        return end.map { String(path[..<$0]) }
+    }
+
+    private func ancestors(_ folder: String) -> [String] {
+        var result = [folder], current = folder
+        while true {
+            current = parent(current)
+            guard current.count > home.count else { return result }
+            result.append(current)
+        }
     }
 
     private func depth(_ path: String) -> Int { path == home ? 0 : path.dropFirst(home.count + 1).split(separator: "/").count }
@@ -172,16 +195,27 @@ final class GrowthTracker: @unchecked Sendable {
 
     private func handle(_ paths: [String], _ flags: [FSEventStreamEventFlags]) {
         let now = Date()
+        // A batch often repeats one file many times; merging its flags needs one lstat per file, not one per event.
+        var merged: [String: FSEventStreamEventFlags] = [:], order: [String] = []
         for (path, flag) in zip(paths, flags) {
             if flag & FSEventStreamEventFlags(kFSEventStreamEventFlagMustScanSubDirs) != 0 { ledger.incomplete = true }
             guard flag & FSEventStreamEventFlags(kFSEventStreamEventFlagItemIsFile) != 0 else { continue }
+            if merged[path] == nil { order.append(path) }
+            merged[path, default: 0] |= flag
+        }
+        for path in order {
+            guard let flag = merged[path] else { continue }
             if protectedPrefixes.contains(where: { path.hasPrefix($0) }) && !measuredProtected.contains(where: { path.hasPrefix($0) }) {
                 ledger.record(path, .unmeasured, at: now)
                 continue
             }
-            ledger.record(path, Self.change(flag, size: Self.allocatedSize(path)), at: now)
+            let onlyRemoved = flag & Self.writes == 0 && flag & FSEventStreamEventFlags(kFSEventStreamEventFlagItemRemoved) != 0
+            ledger.record(path, Self.change(flag, size: onlyRemoved ? nil : Self.allocatedSize(path)), at: now)
         }
     }
+
+    private static let writes = FSEventStreamEventFlags(kFSEventStreamEventFlagItemCreated | kFSEventStreamEventFlagItemModified | kFSEventStreamEventFlagItemRenamed
+                                                        | kFSEventStreamEventFlagItemInodeMetaMod | kFSEventStreamEventFlagItemXattrMod)
 
     static func change(_ flag: FSEventStreamEventFlags, size: Int64?) -> GrowthLedger.Change {
         let created = flag & FSEventStreamEventFlags(kFSEventStreamEventFlagItemCreated) != 0
