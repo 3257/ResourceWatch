@@ -1,0 +1,17 @@
+excluded:
+  - .build
+  - dist
+
+# The code base keeps one short statement per line instead of wrapping arguments.
+line_length:
+  warning: 200
+  error: 250
+  ignores_comments: true
+
+# Short names for metrics samples (m), points (x, y), file descriptors (fd) and units (mb).
+identifier_name:
+  excluded: [id, m, p, t, x, y, h, fd, vm, mb]
+
+# Kernel process and interface names decode with lossy UTF-8 repair on purpose; the failable initializer would drop the whole name.
+disabled_rules:
+  - optional_data_string_conversion

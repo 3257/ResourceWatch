@@ -38,7 +38,8 @@ private func sample(_ pid: Int32, _ parent: Int32, _ name: String, gib: Double, 
 
 @Test func adviceNamesTheGroupTheLargestChildAndATip() throws {
     var m = Metrics(cpu: 10, pressure: 1, swap: 0, free: 0, total: 0, processes: "")
-    m.processSamples = [sample(100, 1, "Google Chrome", gib: 1), sample(101, 100, "Google Chrome Helper (Renderer)", gib: 5), sample(102, 100, "Google Chrome Helper (Renderer)", gib: 3), sample(300, 1, "Notes", gib: 0.3)]
+    m.processSamples = [sample(100, 1, "Google Chrome", gib: 1), sample(101, 100, "Google Chrome Helper (Renderer)", gib: 5),
+                        sample(102, 100, "Google Chrome Helper (Renderer)", gib: 3), sample(300, 1, "Notes", gib: 0.3)]
     m.memoryTotal = 36 << 30
     let advice = Advisor.processAdvice(m, settings: WatchSettings())
     let chrome = try #require(advice.first)

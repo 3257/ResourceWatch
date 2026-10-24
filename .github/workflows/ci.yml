@@ -24,6 +24,10 @@ jobs:
         run: |
           xcodebuild -version
           swift --version
+      - name: Lint
+        run: |
+          brew install swiftlint
+          swiftlint lint --strict --reporter github-actions-logging
       - name: Test
         run: swift test
       - name: Build the app bundle

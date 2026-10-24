@@ -261,7 +261,8 @@ enum GrowthAdvisor {
             let changes = "\(entry.changes.formatted()) file change\(entry.changes == 1 ? "" : "s")"
             var detail = entry.sizeUnclear
                 ? ["\(changes) in this folder in the last hour.",
-                   "ResourceWatch counted \(StorageAdvisor.format(entry.bytes)), but free space did not drop by that much, so the size is unclear. Files that were deleted without a file event can cause this."]
+                   "ResourceWatch counted \(StorageAdvisor.format(entry.bytes)), but free space did not drop by that much, so the size is unclear. "
+                    + "Files that were deleted without a file event can cause this."]
                 : ["Files in this folder grew by \(StorageAdvisor.format(entry.bytes)) in the last hour (\(changes))."]
             detail += target?.advice.components(separatedBy: "\n") ?? []
             detail.append(caveat)

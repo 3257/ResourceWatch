@@ -52,7 +52,11 @@ extension Monitor {
         guard alert.runModal() == .alertFirstButtonReturn else { return }
         var failures: [String] = []
         for path in paths {
-            do { try FileManager.default.trashItem(at: URL(fileURLWithPath: path), resultingItemURL: nil) } catch { failures.append("\((path as NSString).abbreviatingWithTildeInPath): \(error.localizedDescription)") }
+            do {
+                try FileManager.default.trashItem(at: URL(fileURLWithPath: path), resultingItemURL: nil)
+            } catch {
+                failures.append("\((path as NSString).abbreviatingWithTildeInPath): \(error.localizedDescription)")
+            }
         }
         let now = Date().formatted(date: .omitted, time: .shortened)
         events.insert(failures.isEmpty ? "\(now) — Moved \(title) to the Trash" : "\(now) — Could not move all of \(title) to the Trash\n" + failures.joined(separator: "\n"), at: 0)

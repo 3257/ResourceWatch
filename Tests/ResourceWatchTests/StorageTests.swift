@@ -192,7 +192,8 @@ private func worktreeFixture(_ root: URL) throws -> URL {
     let catalog = Dictionary(uniqueKeysWithValues: StorageTarget.catalog.map { ($0.path, $0.trashable) })
     #expect(catalog["Library/Developer/Xcode/DerivedData"] == true)
     #expect(catalog["Library/Caches/org.swift.swiftpm"] == true)
-    for path in ["Library/Developer/Xcode/Archives", "Library/Developer/CoreSimulator/Devices", "Library/Developer/XCTestDevices", ".Trash", "Downloads", "Library/Application Support/MobileSync/Backup"] {
+    for path in ["Library/Developer/Xcode/Archives", "Library/Developer/CoreSimulator/Devices", "Library/Developer/XCTestDevices",
+                 ".Trash", "Downloads", "Library/Application Support/MobileSync/Backup"] {
         #expect(catalog[path] == false, "\(path) must not offer Move to Trash")
     }
 }

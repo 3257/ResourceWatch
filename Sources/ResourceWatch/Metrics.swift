@@ -70,6 +70,16 @@ final class Sampler {
         let now = ProcessInfo.processInfo.systemUptime
         let elapsed = lastTime.map { now - $0 } ?? 0
         let network = networkTracker.update(try networkCounters(), elapsed: elapsed)
+        let samples = processSamples(elapsed: elapsed)
+        lastTime = now
+        let top = samples.sorted { $0.cpu > $1.cpu }.prefix(5).map { p in
+            "\(p.name) · PID \(p.identity.split(separator: ":")[0]) · \(String(format: "%.0f", p.cpu))% CPU · \(p.memory / 1048576) MiB"
+        }.joined(separator: "\n")
+        return Metrics(cpu: cpu, pressure: Int(pressure), swap: swap.xsu_used, free: Int64(free), total: Int64(total), processes: top, processSamples: samples,
+                       memoryUsed: memoryUsed, memoryTotal: memoryTotal, compressed: compressed, wired: wired, network: network)
+    }
+
+    private func processSamples(elapsed: TimeInterval) -> [ProcessSample] {
         var timebase = mach_timebase_info_data_t()
         mach_timebase_info(&timebase)
         let nanosecondsPerTick = Double(timebase.numer) / Double(timebase.denom)
@@ -91,13 +101,11 @@ final class Sampler {
             var name = [CChar](repeating: 0, count: 1024)
             _ = proc_name(pid, &name, UInt32(name.count))
             let decodedName = String(decoding: name.prefix(while: { $0 != 0 }).map { UInt8(bitPattern: $0) }, as: UTF8.self)
-            samples.append(ProcessSample(identity: identity, name: decodedName.isEmpty ? "PID \(pid)" : decodedName, cpu: usage, memory: all.ptinfo.pti_resident_size, pid: pid, parentPID: Int32(bitPattern: all.pbsd.pbi_ppid)))
+            samples.append(ProcessSample(identity: identity, name: decodedName.isEmpty ? "PID \(pid)" : decodedName, cpu: usage,
+                                         memory: all.ptinfo.pti_resident_size, pid: pid, parentPID: Int32(bitPattern: all.pbsd.pbi_ppid)))
         }
-        processTimes = next; lastTime = now
-        let top = samples.sorted { $0.cpu > $1.cpu }.prefix(5).map { p in
-            "\(p.name) · PID \(p.identity.split(separator: ":")[0]) · \(String(format: "%.0f", p.cpu))% CPU · \(p.memory / 1048576) MiB"
-        }.joined(separator: "\n")
-        return Metrics(cpu: cpu, pressure: Int(pressure), swap: swap.xsu_used, free: Int64(free), total: Int64(total), processes: top, processSamples: samples, memoryUsed: memoryUsed, memoryTotal: memoryTotal, compressed: compressed, wired: wired, network: network)
+        processTimes = next
+        return samples
     }
 }
 
