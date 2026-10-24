@@ -49,30 +49,18 @@ enum AIAgents {
         """
     }
 
-    /// Opens a `.command` file, so the user's default terminal app runs the agent in a new window or tab without an Automation permission.
     static func launch(_ agent: AIAgent, prompt: String, directory: String) throws {
-        let folder = FileManager.default.temporaryDirectory.appending(path: "ResourceWatch-AI")
-        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        let id = UUID().uuidString
-        let promptFile = folder.appending(path: "\(id).txt"), commandFile = folder.appending(path: "\(id).command")
+        let promptFile = FileManager.default.temporaryDirectory.appending(path: "ResourceWatch-Terminal/\(UUID().uuidString).txt")
+        try FileManager.default.createDirectory(at: promptFile.deletingLastPathComponent(), withIntermediateDirectories: true)
         try prompt.write(to: promptFile, atomically: true, encoding: .utf8)
-        let shell = ProcessInfo.processInfo.environment["SHELL"].flatMap { $0.hasSuffix("fish") ? nil : $0 } ?? "/bin/zsh"
-        try script(agent, promptFile: promptFile, directory: directory, shell: shell).write(to: commandFile, atomically: true, encoding: .utf8)
-        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: commandFile.path)
-        NSWorkspace.shared.open(commandFile)
+        try TerminalLauncher.open(script(agent, promptFile: promptFile, directory: directory, shell: TerminalLauncher.shell))
     }
 
     /// The script reads the prompt from a file, so quotes and new lines in the prompt need no shell escaping.
     static func script(_ agent: AIAgent, promptFile: URL, directory: String, shell: String) -> String {
         let flag = agent.promptFlag.map { " " + WorktreeReader.quote($0) } ?? ""
-        return """
-        #!/bin/zsh
-        cd \(WorktreeReader.quote(directory)) 2>/dev/null || cd ~
-        prompt="$(cat \(WorktreeReader.quote(promptFile.path)))"
-        rm -f \(WorktreeReader.quote(promptFile.path)) "$0"
-        exec \(WorktreeReader.quote(shell)) -ilc 'exec "$@"' resourcewatch \(WorktreeReader.quote(agent.path))\(flag) "$prompt"
-
-        """
+        return TerminalLauncher.script(command: WorktreeReader.quote(agent.path) + flag + " \"$prompt\"", directory: directory, shell: shell,
+                                       setup: ["prompt=\"$(cat \(WorktreeReader.quote(promptFile.path)))\"", "rm -f \(WorktreeReader.quote(promptFile.path))"])
     }
 
     private static func shellPaths(shell: String) -> [String] {

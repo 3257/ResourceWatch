@@ -35,11 +35,15 @@ extension Recommendation.Action {
         case .activate: "macwindow.on.rectangle"
         case .openActivityMonitor: "gauge.with.dots.needle.33percent"
         case .moveToTrash: "trash"
+        case .runScript: "terminal"
         }
     }
 
     var isAvailable: Bool {
-        if case .activate(let pid) = self { return NSRunningApplication(processIdentifier: pid) != nil }
-        return true
+        switch self {
+        case .activate(let pid): NSRunningApplication(processIdentifier: pid) != nil
+        case .runScript(let script): script.command(in: CleanupScript.folder) != nil
+        default: true
+        }
     }
 }

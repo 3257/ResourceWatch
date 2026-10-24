@@ -110,7 +110,7 @@ private struct MiniPanelView: View {
                 ForEach(monitor.storageAdvice.prefix(3)) { item in
                     let parts = Headline(item.title)
                     Menu {
-                        ForEach(item.actions.filter { if case .copy = $0 { false } else { true } }, id: \.self) { action in
+                        ForEach(item.actions.filter { if case .copy = $0 { false } else { $0.isAvailable } }, id: \.self) { action in
                             Button(action.title, systemImage: action.symbol) { monitor.perform(action) }
                         }
                     } label: {
@@ -153,7 +153,7 @@ private struct SuggestionList: View {
                         .accessibilityIdentifier("suggestion-\(suggestion.id)")
                     if open {
                         VStack(alignment: .leading, spacing: 4) {
-                            ForEach(suggestion.detail.filter { !$0.hasPrefix("Command: ") }, id: \.self) { line in
+                            ForEach(suggestion.detail.filter { !$0.hasPrefix("Command: ") && !$0.hasPrefix("Script: ") }, id: \.self) { line in
                                 Text(line).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                             }
                         }.textSelection(.enabled)
@@ -220,8 +220,11 @@ private struct ValueRow: View {
 
 private extension Recommendation.Action {
     var help: String {
-        if case .copy(let command) = self { return "Copies: \(command)" }
-        return title
+        switch self {
+        case .copy(let command): "Copies: \(command)"
+        case .runScript(let script): "Opens Terminal and runs \(script.file). \(script.summary)"
+        default: title
+        }
     }
 }
 

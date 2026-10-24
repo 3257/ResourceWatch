@@ -66,6 +66,18 @@ When a warning is active, **Current warnings** appears at the top of the menu wi
 - **Bring app to front**, **Open Activity Monitor**, **Show in Finder**.
 - **Move to Trash…**: offered only for folders that their tools recreate, such as DerivedData, DeviceSupport and package-manager caches, and for orphaned DerivedData folders. A dialog names every item first, and **Cancel** is the default button. Archives, simulators, worktrees, backups, Downloads and growing folders are never offered; they need their own tool or your own choice. In the mini panel, click a cleanup item to choose **Show in Finder** or **Move to Trash…**.
 - **Copy command**: copies a cleanup command, such as `xcrun simctl delete unavailable` or `git -C … worktree remove …`, to the clipboard. You paste it into Terminal and run it yourself.
+- **Run script in Terminal**: opens your default terminal app and runs a bundled cleanup script for that suggestion. Today this covers Xcode DerivedData, DerivedData of deleted projects, simulator devices and runtimes, DeviceSupport and the Swift Package Manager cache, through `dev_clean.py`. The action appears only when the Xcode developer tools are installed (`xcode-select -p`).
+
+Every bundled script, in `CleanupScripts/`, follows the same contract:
+
+1. It lists what it found and its size before it asks anything.
+2. It asks y/N before each group of changes, and No is the default. There is no flag that skips the question.
+3. It changes nothing while the related app runs, such as Xcode or Simulator, and it says why.
+4. It changes only what it listed in the same run. It checks again every path that ResourceWatch gives it.
+5. It reads no secrets, makes no network calls and needs no administrator access.
+6. It has `--help`, and it exits with a non-zero code on bad input.
+
+Without a terminal, every answer is No. ResourceWatch itself still deletes nothing.
 
 **Ask AI in Terminal** (menu) or **Ask AI** (mini panel) sends a suggestion to an AI coding CLI. ResourceWatch detects Claude Code (`claude`), Codex (`codex`), OpenCode (`opencode --prompt`) and Gemini CLI (`gemini -i`) through your login shell's `PATH` at launch, and lists only the installed ones. The app opens a `.command` file with your default terminal app. The agent starts an interactive session in your login shell, with the suggestion, your Mac's memory and storage readings, and a rule to ask before it deletes files or stops processes. Worktree suggestions start in the worktree folder; other suggestions start in your home folder. The terminal opens a new window, or a new tab when **System Settings → Desktop & Dock → Prefer tabs when opening documents** is **Always**. No Automation or Accessibility permission is needed.
 

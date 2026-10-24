@@ -7,6 +7,7 @@ struct Recommendation: Identifiable, Equatable, Sendable {
         case activate(Int32)
         case openActivityMonitor
         case moveToTrash(title: String, paths: [String])
+        case runScript(CleanupScript)
 
         var title: String {
             switch self {
@@ -15,6 +16,7 @@ struct Recommendation: Identifiable, Equatable, Sendable {
             case .activate: "Bring app to front"
             case .openActivityMonitor: "Open Activity Monitor"
             case .moveToTrash: "Move to Trash…"
+            case .runScript: "Run script in Terminal"
             }
         }
     }
@@ -24,6 +26,38 @@ struct Recommendation: Identifiable, Equatable, Sendable {
     var detail: [String]
     var bytes: Int64?
     var actions: [Action] = []
+}
+
+/// A bundled script that reports first and asks y/N before each change. ResourceWatch only opens it in Terminal.
+struct CleanupScript: Hashable, Sendable {
+    var file: String
+    var arguments: [String]
+    var summary: String
+
+    static func devClean(_ categories: String, summary: String) -> CleanupScript {
+        CleanupScript(file: "dev_clean.py", arguments: ["--apply", "--only", categories], summary: summary)
+    }
+
+    static let folder = Bundle.main.resourceURL?.appending(path: "Scripts")
+
+    // /usr/bin/python3 is a stub that asks to install the developer tools when they are missing.
+    static let developerToolsInstalled: Bool = {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/xcode-select")
+        process.arguments = ["-p"]
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = FileHandle.nullDevice
+        do { try process.run() } catch { return false }
+        process.waitUntilExit()
+        return process.terminationStatus == 0
+    }()
+
+    /// The interpreter and arguments that run the script, or nil when the script cannot run here.
+    func command(in folder: URL?, developerTools: Bool = developerToolsInstalled) -> (executable: String, arguments: [String])? {
+        guard let path = folder?.appending(path: file).path, FileManager.default.fileExists(atPath: path) else { return nil }
+        if file.hasSuffix(".py") { return developerTools ? ("/usr/bin/python3", ["-I", path] + arguments) : nil }
+        return ("/bin/zsh", [path] + arguments)
+    }
 }
 
 struct AppGroup: Equatable, Sendable {
@@ -83,7 +117,13 @@ enum Advisor {
     }
 
     static func commandLines(_ actions: [Recommendation.Action]) -> [String] {
-        actions.compactMap { if case .copy(let command) = $0 { "Command: \(command)" } else { nil } }
+        actions.compactMap {
+            switch $0 {
+            case .copy(let command): "Command: \(command)"
+            case .runScript(let script): "Script: \(script.file) — \(script.summary)"
+            default: nil
+            }
+        }
     }
 
     private static func displayName(_ name: String) -> String {
