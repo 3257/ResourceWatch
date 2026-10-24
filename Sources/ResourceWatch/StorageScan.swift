@@ -77,18 +77,46 @@ enum ScanSchedule {
 enum StorageScanner {
     static let timeLimit: TimeInterval = 20
 
-    static func allocatedSize(_ url: URL, deadline: Date) -> (bytes: Int64, complete: Bool) {
-        let keys: [URLResourceKey] = [.totalFileAllocatedSizeKey, .isDirectoryKey]
-        guard let values = try? url.resourceValues(forKeys: Set(keys)) else { return (0, true) }
-        guard values.isDirectory == true else { return (Int64(values.totalFileAllocatedSize ?? 0), true) }
-        guard let items = FileManager.default.enumerator(at: url, includingPropertiesForKeys: keys, errorHandler: { _, _ in true }) else { return (0, true) }
-        var total: Int64 = 0, count = 0
+    struct Size {
+        /// Blocks that no other file shares, so deleting the item frees at least this much.
+        var bytes: Int64 = 0
+        var complete = true
+        /// The rest of the allocated size: APFS clones, such as simulator test clones, share blocks with their source.
+        var shared: Int64 = 0
+    }
+
+    static func allocatedSize(_ url: URL, deadline: Date) -> Size {
+        let keys: [URLResourceKey] = [.totalFileAllocatedSizeKey, .isDirectoryKey, .isRegularFileKey]
+        guard let values = try? url.resourceValues(forKeys: Set(keys)) else { return Size() }
+        guard values.isDirectory == true else {
+            let allocated = Int64(values.totalFileAllocatedSize ?? 0), own = values.isRegularFile == true ? privateSize(url.path) ?? allocated : allocated
+            return Size(bytes: own, shared: allocated - own)
+        }
+        guard let items = FileManager.default.enumerator(at: url, includingPropertiesForKeys: keys, errorHandler: { _, _ in true }) else { return Size() }
+        var size = Size(), count = 0
         for case let item as URL in items {
             count += 1
-            if count.isMultiple(of: 2_000), Date() > deadline { return (total, false) }
-            total += Int64((try? item.resourceValues(forKeys: [.totalFileAllocatedSizeKey]))?.totalFileAllocatedSize ?? 0)
+            if count.isMultiple(of: 2_000), Date() > deadline {
+                size.complete = false
+                return size
+            }
+            guard let values = try? item.resourceValues(forKeys: [.totalFileAllocatedSizeKey, .isRegularFileKey]) else { continue }
+            let allocated = Int64(values.totalFileAllocatedSize ?? 0), own = values.isRegularFile == true ? privateSize(item.path) ?? allocated : allocated
+            size.bytes += own
+            size.shared += allocated - own
         }
-        return (total, true)
+        return size
+    }
+
+    /// The bytes of a file that no clone shares, or nil where the volume does not report it (not APFS).
+    static func privateSize(_ path: String) -> Int64? {
+        var request = attrlist()
+        request.bitmapcount = u_short(ATTR_BIT_MAP_COUNT)
+        request.forkattr = attrgroup_t(ATTR_CMNEXT_PRIVATESIZE)
+        var buffer = [UInt8](repeating: 0, count: 16)
+        let status = buffer.withUnsafeMutableBytes { getattrlist(path, &request, $0.baseAddress, $0.count, UInt32(FSOPT_ATTR_CMN_EXTENDED | FSOPT_NOFOLLOW)) }
+        // The kernel packs the reply at 4-byte alignment: a UInt32 length, then the off_t.
+        return status == 0 ? buffer.withUnsafeBytes { $0.loadUnaligned(fromByteOffset: 4, as: Int64.self) } : nil
     }
 
     static func scan(_ targets: [StorageTarget] = StorageTarget.catalog, home: URL, projectFolders: [String] = [], includeProtected: Bool, now: Date = Date()) -> [StorageFinding] {
@@ -100,20 +128,23 @@ enum StorageScanner {
             let url = home.appending(path: target.path)
             guard FileManager.default.fileExists(atPath: url.path) else { return nil }
             let deadline = Date().addingTimeInterval(timeLimit)
-            var size: (bytes: Int64, complete: Bool)
+            var size: Size
             var detail = target.advice.components(separatedBy: "\n")
             if let days = target.olderThanDays {
                 let cutoff = now.addingTimeInterval(-Double(days) * 86_400)
                 let old = ((try? FileManager.default.contentsOfDirectory(at: url, includingPropertiesForKeys: [.contentModificationDateKey])) ?? []).filter {
                     ((try? $0.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? now) < cutoff
                 }
-                size = old.reduce((0, true)) { sum, item in
+                size = old.reduce(Size()) { sum, item in
                     let part = allocatedSize(item, deadline: deadline)
-                    return (sum.0 + part.bytes, sum.1 && part.complete)
+                    return Size(bytes: sum.bytes + part.bytes, complete: sum.complete && part.complete, shared: sum.shared + part.shared)
                 }
                 detail.append("\(old.count) item\(old.count == 1 ? "" : "s")")
             } else {
                 size = allocatedSize(url, deadline: deadline)
+            }
+            if size.shared >= 1_000_000_000 {
+                detail.append("Another \(StorageAdvisor.format(size.shared)) is shared with copies, such as simulator test clones. Deleting this folder frees that space only when the copies are gone too.")
             }
             return StorageFinding(id: target.path, title: target.name, path: url.path, bytes: size.bytes, complete: size.complete, detail: detail, command: target.command,
                                   trash: target.trashable ? [url.path] : [])

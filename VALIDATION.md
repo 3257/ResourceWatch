@@ -54,3 +54,12 @@ Home volume only; physical `en*` network interfaces only; no folder/network-proc
 The user subsequently confirmed the notification still showed a placeholder, so the ICNS/Finder and delivery checks above did **not** prove correct notification rendering. Removing the stale old-app registration and restarting Notification Center also did not resolve the reported issue.
 
 Added a compiled AppIcon asset catalog, declared CFBundleIconName alongside CFBundleIconFile, and bumped the bundle to 0.1.2 (build 3). Verified 11 named AppIcon renditions in Assets.car, the asset compiler's metadata, strict signing and all 17 tests. Reloaded the per-user notification services without deleting preferences/history, launched the new build and sent a distinctly titled **ResourceWatch test — 0.1.2**. Visual confirmation of that new notification is pending; this remains an unconfirmed fix.
+
+## Growth and cleanup sizes with APFS clones — 2026-10-24
+
+- Problem seen: the panel showed `~/Library/Developer/XCTestDevices — +1001.9 GB in the last hour` (3,458,946 file changes) on a 995 GB volume with 393 GB free. `du -sh` also reported 1.0 TB for the folder's 89 simulator clones.
+- Measured on this Mac with `getattrlist(ATTR_CMNEXT_PRIVATESIZE)`: `XCTestDevices` has 3.8 million files, 1,189 GB allocated and 0 GB private; `CoreSimulator/Devices` has 384,000 files, 108 GB allocated and 37 GB private. A 50 MB `cp -c` clone reports 0 private bytes, and 1 MB after a small append.
+- Fixes: growth and cleanup sizes use private bytes; cleanup items name shared space of 1 GB or more; files past the 300,000-file limit no longer count one way; growth that free space cannot explain shows its change count and "the size is unclear".
+- The `GrowthTracker` stream now retains the tracker. With a second tracker test, `swift test` crashed with signal 11 in 1 of 5 runs; after the change, 12 of 12 runs passed. `main` passed 6 of 6 runs before the change.
+- Tests: clone sizes in a temporary folder (`copyfile` with `COPYFILE_CLONE`), a live tracker that ignores five clones and counts a new 2 MB file, symmetric counting past the file limit, and the free-space check with the 1001.9 GB case. 45 tests passed.
+- Not yet checked in the running app: the panel and menu after an hour of parallel UI tests.

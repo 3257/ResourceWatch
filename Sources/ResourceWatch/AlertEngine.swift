@@ -12,6 +12,8 @@ struct AlertEngine {
     private var lastSample: Date?
     private var previousSettings: WatchSettings?
     private(set) var storageGrowthActive = false
+    /// How much free space fell within the last hour of samples; 0 when it rose.
+    private(set) var freeSpaceDrop: Int64 = 0
 
     mutating func evaluate(_ m: Metrics, settings: WatchSettings, now: Date) -> [WatchAlert] {
         var alertSettings = settings
@@ -25,6 +27,7 @@ struct AlertEngine {
         policy.cooldown = settings.cooldownMinutes * 60
         diskHistory.append((now, m.free))
         diskHistory.removeAll { now.timeIntervalSince($0.0) > 3600 }
+        freeSpaceDrop = max(0, (diskHistory.map(\.1).max() ?? m.free) - m.free)
         let gib = Double(1 << 30)
         var alerts: [WatchAlert] = []
         func check(_ key: String, _ active: Bool, _ duration: TimeInterval, _ title: String, _ body: String) {

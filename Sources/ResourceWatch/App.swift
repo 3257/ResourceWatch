@@ -135,11 +135,11 @@ final class Monitor: ObservableObject {
             newEvents.append("\(now.formatted(date: .omitted, time: .shortened)) — \(alert.title)\n\(body)")
             send(alert.title, body)
         }
-        let growing = engine.storageGrowthActive
-        updateMenus { [self] in publish(m, now: now, newEvents: newEvents, growing: growing) }
+        let growing = engine.storageGrowthActive, freeSpaceDrop = engine.freeSpaceDrop
+        updateMenus { [self] in publish(m, now: now, newEvents: newEvents, growing: growing, freeSpaceDrop: freeSpaceDrop) }
     }
 
-    private func publish(_ m: Metrics, now: Date, newEvents: [String], growing: Bool) {
+    private func publish(_ m: Metrics, now: Date, newEvents: [String], growing: Bool, freeSpaceDrop: Int64) {
         let gib = Double(1 << 30)
         latest = m; samplingError = nil
         currentWarnings = HealthSummary.warnings(m, settings: settings)
@@ -164,7 +164,7 @@ final class Monitor: ObservableObject {
         if lastGrowthReport.map({ now.timeIntervalSince($0) >= 60 }) ?? true {
             lastGrowthReport = now
             Task {
-                let report = await growthTracker.report()
+                let report = await growthTracker.report().checked(freeSpaceDrop: freeSpaceDrop)
                 updateMenus { [self] in growthReport = report; growthAdvice = GrowthAdvisor.advice(report) }
             }
         }
@@ -251,7 +251,8 @@ struct ResourceWatchApp: App {
                     Button("Scan now", systemImage: "arrow.clockwise") { monitor.scanStorage(trigger: .manual) }.disabled(monitor.isScanning)
                     if !monitor.growthAdvice.isEmpty {
                         Divider()
-                        Text("Growing now: +\(StorageAdvisor.format(monitor.growthReport.total)) in your home folder in the last hour")
+                        Text(monitor.growthReport.sizeUnclear ? "Growing now: file changes in your home folder in the last hour; the size is unclear"
+                             : "Growing now: +\(StorageAdvisor.format(monitor.growthReport.total)) in your home folder in the last hour")
                         ForEach(monitor.growthAdvice) { RecommendationMenu(recommendation: $0, monitor: monitor) }
                     }
                     if !monitor.storageAdvice.isEmpty { Divider() }
