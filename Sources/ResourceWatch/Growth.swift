@@ -6,13 +6,26 @@ struct GrowthEntry: Equatable, Sendable {
     var bytes: Int64
     var changes: Int
     var measured = true
+    var sizeUnclear = false
 }
 
 struct GrowthReport: Equatable, Sendable {
     var entries: [GrowthEntry] = []
     var unmeasured: [GrowthEntry] = []
     var total: Int64 = 0
+    var shrunk: Int64 = 0
     var incomplete = false
+    var sizeUnclear = false
+
+    /// Marks sizes that free space cannot explain. Growth in one folder can exceed the drop in free space only by what other folders freed;
+    /// the factor and the 1 GB allow for purgeable space and snapshots. A larger number comes from a counting error, not from the disk.
+    func checked(freeSpaceDrop: Int64) -> GrowthReport {
+        let limit = 2 * (max(0, freeSpaceDrop) + shrunk) + 1_000_000_000
+        var report = self
+        for index in report.entries.indices where report.entries[index].bytes > limit { report.entries[index].sizeUnclear = true }
+        report.sizeUnclear = total > limit
+        return report
+    }
 }
 
 /// Attributes file-size changes to folders under home, per minute, for a rolling window.
@@ -45,12 +58,12 @@ struct GrowthLedger {
         switch change {
         case .created(let size):
             // Also a file moved in. FSEvents does not pair the two names of a move, so the old name counts as removed and the new one as created.
-            delta = size - (known ?? 0)
-            remember(path, size)
+            // A file past the limit is not counted: its removal could not be subtracted, so create-and-delete churn would only add up.
+            delta = remember(path, size, at: date) ? size - (known ?? 0) : 0
         case .modified(let size):
             // The first sight of an existing file only sets a baseline, so a large file that grows a little does not count in full.
             delta = known.map { size - $0 } ?? 0
-            remember(path, size)
+            remember(path, size, at: date)
         case .removed:
             delta = -(known ?? 0)
             sizes[path] = nil
@@ -88,9 +101,10 @@ struct GrowthLedger {
         let unmeasured = protectedCounts.filter { $0.value >= minimumChanges }
             .map { GrowthEntry(path: $0.key, bytes: 0, changes: $0.value, measured: false) }
             .sorted { $0.changes > $1.changes }
-        let total = totals.filter { depth($0.key) == 1 }.values.filter { $0 > 0 }.reduce(0, +)
+        let topLevel = totals.filter { depth($0.key) == 1 }.values
+        let total = topLevel.filter { $0 > 0 }.reduce(0, +), shrunk = -topLevel.filter { $0 < 0 }.reduce(0, +)
         let incomplete = lastDrop.map { now.timeIntervalSince($0) <= window } ?? false
-        return GrowthReport(entries: Array(entries.prefix(5)), unmeasured: Array(unmeasured.prefix(3)), total: total, incomplete: incomplete)
+        return GrowthReport(entries: Array(entries.prefix(5)), unmeasured: Array(unmeasured.prefix(3)), total: total, shrunk: shrunk, incomplete: incomplete)
     }
 
     /// Expands a folder into its growing subfolders while they hold most of its growth; otherwise reports the folder itself.
@@ -113,8 +127,14 @@ struct GrowthLedger {
         protectedChanges[minute, default: [:]][home + "/" + parts.prefix(keep).joined(separator: "/"), default: 0] += 1
     }
 
-    private mutating func remember(_ path: String, _ size: Int64) {
-        if sizes[path] != nil || sizes.count < maxFiles { sizes[path] = size }
+    @discardableResult
+    private mutating func remember(_ path: String, _ size: Int64, at date: Date) -> Bool {
+        guard sizes[path] != nil || sizes.count < maxFiles else {
+            lastDrop = date
+            return false
+        }
+        sizes[path] = size
+        return true
     }
 
     /// The file's folder, cut to `maxDepth` levels below home; nil for a file directly in home.
@@ -162,7 +182,10 @@ final class GrowthTracker: @unchecked Sendable {
     func start() {
         queue.async { [self] in
             guard stream == nil else { return }
-            var context = FSEventStreamContext(version: 0, info: Unmanaged.passUnretained(self).toOpaque(), retain: nil, release: nil, copyDescription: nil)
+            // The stream holds the tracker, so a callback never reaches a freed tracker.
+            var context = FSEventStreamContext(version: 0, info: Unmanaged.passUnretained(self).toOpaque(),
+                                               retain: { info in info.map { _ = Unmanaged<GrowthTracker>.fromOpaque($0).retain() }; return info },
+                                               release: { info in info.map { Unmanaged<GrowthTracker>.fromOpaque($0).release() } }, copyDescription: nil)
             let flags = FSEventStreamCreateFlags(kFSEventStreamCreateFlagFileEvents | kFSEventStreamCreateFlagUseCFTypes)
             guard let created = FSEventStreamCreate(nil, Self.callback, &context, [ledger.home] as CFArray, FSEventStreamEventId(kFSEventStreamEventIdSinceNow), latency, flags) else { return }
             FSEventStreamSetDispatchQueue(created, queue)
@@ -222,25 +245,30 @@ final class GrowthTracker: @unchecked Sendable {
         return flag & arrived != 0 ? .created(size) : .modified(size)
     }
 
+    /// A new APFS clone shares all its blocks with its source, so it counts only the blocks it changes later.
     private static func allocatedSize(_ path: String) -> Int64? {
         var info = stat()
         guard lstat(path, &info) == 0, info.st_mode & S_IFMT == S_IFREG else { return nil }
-        return Int64(info.st_blocks) * 512
+        return StorageScanner.privateSize(path) ?? Int64(info.st_blocks) * 512
     }
 }
 
 enum GrowthAdvisor {
     static func advice(_ report: GrowthReport, home: String = NSHomeDirectory(), targets: [StorageTarget] = StorageTarget.catalog) -> [Recommendation] {
-        let caveat = "ResourceWatch measures file changes in your home folder since it started." + (report.incomplete ? " macOS dropped some file events, so the numbers can be low." : "")
+        let caveat = "ResourceWatch measures file changes in your home folder since it started." + (report.incomplete ? " Some file changes were not measured, so the numbers can be low." : "")
         let measured = report.entries.map { entry -> Recommendation in
             let target = targets.first { entry.path.hasPrefix((home as NSString).appendingPathComponent($0.path)) }
-            var detail = ["Files in this folder grew by \(StorageAdvisor.format(entry.bytes)) in the last hour (\(entry.changes.formatted()) file change\(entry.changes == 1 ? "" : "s"))."]
+            let changes = "\(entry.changes.formatted()) file change\(entry.changes == 1 ? "" : "s")"
+            var detail = entry.sizeUnclear
+                ? ["\(changes) in this folder in the last hour.",
+                   "ResourceWatch counted \(StorageAdvisor.format(entry.bytes)), but free space did not drop by that much, so the size is unclear. Files that were deleted without a file event can cause this."]
+                : ["Files in this folder grew by \(StorageAdvisor.format(entry.bytes)) in the last hour (\(changes))."]
             detail += target?.advice.components(separatedBy: "\n") ?? []
             detail.append(caveat)
             var actions: [Recommendation.Action] = FileManager.default.fileExists(atPath: entry.path) ? [.reveal(entry.path)] : []
             if let command = target?.command { actions.append(.copy(command)) }
-            return Recommendation(id: "growth-\(entry.path)", title: "\(display(entry.path)) — +\(StorageAdvisor.format(entry.bytes)) in the last hour",
-                                  detail: detail + Advisor.commandLines(actions), bytes: entry.bytes, actions: actions)
+            let title = entry.sizeUnclear ? "\(display(entry.path)) — \(changes) in the last hour" : "\(display(entry.path)) — +\(StorageAdvisor.format(entry.bytes)) in the last hour"
+            return Recommendation(id: "growth-\(entry.path)", title: title, detail: detail + Advisor.commandLines(actions), bytes: entry.sizeUnclear ? nil : entry.bytes, actions: actions)
         }
         let unmeasured = report.unmeasured.map { entry -> Recommendation in
             let docker = entry.path.hasSuffix("/com.docker.docker")

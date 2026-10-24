@@ -27,6 +27,23 @@ private func write(_ url: URL, bytes: Int) throws {
     #expect(StorageScanner.allocatedSize(root.appending(path: "missing"), deadline: .distantFuture).bytes == 0)
 }
 
+@Test func clonesCountAsSharedNotAsTheirOwnSize() throws {
+    let root = try temporaryFolder()
+    defer { try? FileManager.default.removeItem(at: root) }
+    try write(root.appending(path: "source/a.bin"), bytes: 3_000_000)
+    try FileManager.default.createDirectory(at: root.appending(path: "clones"), withIntermediateDirectories: true)
+    for index in 0..<4 {
+        #expect(copyfile(root.appending(path: "source/a.bin").path, root.appending(path: "clones/\(index).bin").path, nil, copyfile_flags_t(COPYFILE_CLONE)) == 0)
+    }
+    let clones = StorageScanner.allocatedSize(root.appending(path: "clones"), deadline: .distantFuture)
+    #expect(clones.bytes < 100_000)
+    #expect(clones.shared >= 12_000_000)
+    #expect(StorageScanner.privateSize(root.appending(path: "clones/0.bin").path) == 0)
+    try write(root.appending(path: "plain.bin"), bytes: 1_000_000)
+    #expect((StorageScanner.privateSize(root.appending(path: "plain.bin").path) ?? 0) >= 1_000_000)
+    #expect(StorageScanner.privateSize(root.appending(path: "missing").path) == nil)
+}
+
 @Test func scanReportsOldItemsAndRespectsProtectedFolders() throws {
     let home = try temporaryFolder()
     defer { try? FileManager.default.removeItem(at: home) }

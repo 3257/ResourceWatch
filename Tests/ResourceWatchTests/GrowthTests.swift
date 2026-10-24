@@ -63,14 +63,39 @@ private let mb: Int64 = 1_000_000
     #expect(ledger.report(now: now, window: 10_000).entries.isEmpty)
 }
 
-@Test func fileLimitKeepsCountingNewFiles() {
+@Test func filesPastTheLimitDoNotCountBecauseTheirRemovalCouldNotBeSubtracted() {
     var ledger = GrowthLedger(home: home)
     ledger.maxFiles = 1
     let now = Date()
-    ledger.record("\(home)/a/one", .created(150 * mb), at: now)
-    ledger.record("\(home)/a/two", .created(150 * mb), at: now)
+    // Test runs create and delete simulator clones in a loop; past the limit, only the creations used to count.
+    for _ in 0..<5 {
+        ledger.record("\(home)/a/one", .created(150 * mb), at: now)
+        ledger.record("\(home)/a/two", .created(150 * mb), at: now)
+        ledger.record("\(home)/a/two", .removed, at: now)
+        ledger.record("\(home)/a/one", .removed, at: now)
+    }
+    ledger.record("\(home)/a/one", .created(250 * mb), at: now)
+    ledger.record("\(home)/a/two", .created(250 * mb), at: now)
+    let report = ledger.report(now: now)
     #expect(ledger.trackedFiles == 1)
-    #expect(ledger.report(now: now).entries.first?.bytes == 300 * mb)
+    #expect(report.entries.first?.bytes == 250 * mb)
+    #expect(report.incomplete)
+}
+
+@Test func growthThatFreeSpaceCannotExplainIsMarkedUnclear() {
+    let entries = [GrowthEntry(path: "\(home)/Library/Developer/XCTestDevices", bytes: 1_001_900 * mb, changes: 3_458_946),
+                   GrowthEntry(path: "\(home)/Projects/app", bytes: 4_000 * mb, changes: 900)]
+    let report = GrowthReport(entries: entries, total: 1_005_900 * mb, shrunk: 1_000 * mb).checked(freeSpaceDrop: 5_000 * mb)
+    #expect(report.entries.map(\.sizeUnclear) == [true, false])
+    #expect(report.sizeUnclear)
+    #expect(!GrowthReport(entries: [entries[1]], total: 4_000 * mb).checked(freeSpaceDrop: 3_000 * mb).sizeUnclear)
+    #expect(GrowthReport(entries: [entries[1]], total: 4_000 * mb).checked(freeSpaceDrop: 0).sizeUnclear)
+
+    let advice = GrowthAdvisor.advice(report, home: home)
+    #expect(advice[0].title == "\(home)/Library/Developer/XCTestDevices — \(3_458_946.formatted()) file changes in the last hour")
+    #expect(advice[0].bytes == nil)
+    #expect(advice[0].detail[1].hasPrefix("ResourceWatch counted 1001.9 GB, but free space did not drop by that much"))
+    #expect(advice[1].title.hasSuffix("app — +4.0 GB in the last hour"))
 }
 
 @Test func eventFlagsMapToChanges() {
@@ -103,6 +128,29 @@ private let mb: Int64 = 1_000_000
     #expect((report.entries.first?.bytes ?? 0) >= 6_000_000)
 }
 
+@Test func trackerCountsAnAPFSCloneOnlyForTheBlocksItChanges() async throws {
+    let temporary = FileManager.default.temporaryDirectory.appending(path: "ResourceWatchClones-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: temporary.appending(path: "clones"), withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: temporary.appending(path: "fresh"), withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: temporary) }
+    let root = try #require(realpath(temporary.path, nil))
+    defer { free(root) }
+    let home = String(cString: root)
+    try Data(repeating: 3, count: 4_000_000).write(to: URL(fileURLWithPath: "\(home)/source.bin"))
+    let tracker = GrowthTracker(home: home, latency: 0.1)
+    tracker.start()
+    try await Task.sleep(for: .milliseconds(500))
+    for index in 0..<5 { #expect(copyfile("\(home)/source.bin", "\(home)/clones/\(index).bin", nil, copyfile_flags_t(COPYFILE_CLONE)) == 0) }
+    try Data(repeating: 1, count: 2_000_000).write(to: URL(fileURLWithPath: "\(home)/fresh/new.bin"))
+    var report = GrowthReport()
+    for _ in 0..<50 where report.total < 2_000_000 {
+        try await Task.sleep(for: .milliseconds(200))
+        report = await tracker.report(minimumBytes: 1_000_000)
+    }
+    #expect(report.entries.map(\.path) == ["\(home)/fresh"])
+    #expect(report.total < 3_000_000)
+}
+
 @Test func growthAdviceExplainsKnownFoldersAndProtectedOnes() {
     let report = GrowthReport(entries: [GrowthEntry(path: "\(home)/Library/Caches/Homebrew/downloads", bytes: 2_500 * mb, changes: 40)],
                               unmeasured: [GrowthEntry(path: "\(home)/Library/Containers/com.docker.docker", bytes: 0, changes: 12_000, measured: false)],
@@ -112,7 +160,7 @@ private let mb: Int64 = 1_000_000
     #expect(advice[0].title.hasSuffix("Library/Caches/Homebrew/downloads — +2.5 GB in the last hour"))
     #expect(advice[0].detail.first == "Files in this folder grew by 2.5 GB in the last hour (40 file changes).")
     #expect(advice[0].detail.contains("Homebrew keeps the downloads of installed packages and old versions here."))
-    #expect(advice[0].detail.contains { $0.contains("macOS dropped some file events") })
+    #expect(advice[0].detail.contains { $0.contains("Some file changes were not measured") })
     #expect(advice[0].actions == [.copy("brew cleanup --prune=all")])
     #expect(advice[1].actions == [.copy("docker system df")])
     #expect(advice[1].detail.contains { $0.hasPrefix("macOS protects this folder") })

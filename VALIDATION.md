@@ -65,3 +65,12 @@ Added a compiled AppIcon asset catalog, declared CFBundleIconName alongside CFBu
 - Clicked through the built app with Accessibility: Storage cleanup → Xcode DerivedData for deleted projects shows the `Script:` line and **Run script in Terminal** next to **Ask AI in Terminal**. The click opened Terminal, which ran `dev_clean.py --apply --only dd-gone`. An `xcodebuild` process was running, so the script printed "Report only: xcodebuild running", listed the 6 folders and ended with "Nothing was deleted". The DerivedData listing was identical before and after, and the temporary `.command` file was gone.
 - The mini panel's cleanup and growth row menus now use the same `RecommendationActions` view as the menu bar submenu, so they offer every available action and Ask AI. Checked: the build, the tests, and the new footer text in the running panel. The open row menu was not captured; GUI automation was stopped because it reached other windows.
 - Not covered by hand: the interactive y/N prompt with nothing busy. The closed-stdin test and the `spm` run cover the No path.
+
+## Growth and cleanup sizes with APFS clones — 2026-10-24
+
+- Problem seen: the panel showed `~/Library/Developer/XCTestDevices — +1001.9 GB in the last hour` (3,458,946 file changes) on a 995 GB volume with 393 GB free. `du -sh` also reported 1.0 TB for the folder's 89 simulator clones.
+- Measured on this Mac with `getattrlist(ATTR_CMNEXT_PRIVATESIZE)`: `XCTestDevices` has 3.8 million files, 1,189 GB allocated and 0 GB private; `CoreSimulator/Devices` has 384,000 files, 108 GB allocated and 37 GB private. A 50 MB `cp -c` clone reports 0 private bytes, and 1 MB after a small append.
+- Fixes: growth and cleanup sizes use private bytes; cleanup items name shared space of 1 GB or more; files past the 300,000-file limit no longer count one way; growth that free space cannot explain shows its change count and "the size is unclear".
+- The `GrowthTracker` stream now retains the tracker. With a second tracker test, `swift test` crashed with signal 11 in 1 of 5 runs; after the change, 12 of 12 runs passed. `main` passed 6 of 6 runs before the change.
+- Tests: clone sizes in a temporary folder (`copyfile` with `COPYFILE_CLONE`), a live tracker that ignores five clones and counts a new 2 MB file, symmetric counting past the file limit, and the free-space check with the 1001.9 GB case. 45 tests passed.
+- Not yet checked in the running app: the panel and menu after an hour of parallel UI tests.
