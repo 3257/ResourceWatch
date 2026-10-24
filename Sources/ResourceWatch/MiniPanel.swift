@@ -47,11 +47,15 @@ private struct MiniPanelView: View {
             if let m = monitor.latest {
                 LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
                     tile(.cpu, symbol: "cpu", value: String(format: "%.0f%%", m.cpu), detail: "All cores", fraction: m.cpu / 100)
-                    tile(.memory, symbol: "memorychip", value: String(format: "%.1f GiB", Double(m.memoryUsed) / gib), detail: m.pressure >= 4 ? "Critical pressure" : m.pressure >= 2 ? "Warning pressure" : "Normal pressure", fraction: m.memoryTotal > 0 ? Double(m.memoryUsed) / Double(m.memoryTotal) : 0)
+                    tile(.memory, symbol: "memorychip", value: String(format: "%.1f GiB", Double(m.memoryUsed) / gib),
+                         detail: m.pressure >= 4 ? "Critical pressure" : m.pressure >= 2 ? "Warning pressure" : "Normal pressure",
+                         fraction: m.memoryTotal > 0 ? Double(m.memoryUsed) / Double(m.memoryTotal) : 0)
                     tile(.network, symbol: "network", value: rate(m.network.download) + " ↓", detail: rate(m.network.upload) + " ↑", fraction: nil)
-                    tile(.storage, symbol: "internaldrive", value: String(format: "%.0f GB", Double(m.free) / 1e9), detail: "Free on home volume", fraction: m.total > 0 ? 1 - Double(m.free) / Double(m.total) : 0)
+                    tile(.storage, symbol: "internaldrive", value: String(format: "%.0f GB", Double(m.free) / 1e9), detail: "Free on home volume",
+                         fraction: m.total > 0 ? 1 - Double(m.free) / Double(m.total) : 0)
                 }
-                Sparkline(values: monitor.cpuHistory).stroke(Color.accentColor, style: StrokeStyle(lineWidth: 1.5, lineJoin: .round)).frame(height: 26).accessibilityLabel("CPU history, up to ten minutes")
+                Sparkline(values: monitor.cpuHistory).stroke(Color.accentColor, style: StrokeStyle(lineWidth: 1.5, lineJoin: .round)).frame(height: 26)
+                    .accessibilityLabel("CPU history, up to ten minutes")
                 if !monitor.suggestions.isEmpty { SuggestionList(suggestions: monitor.suggestions, agents: monitor.agents, perform: monitor.perform, ask: monitor.ask) }
                 if let selected { details(selected, m) }
             } else { Text("Collecting first sample…").foregroundStyle(.secondary) }
@@ -68,8 +72,7 @@ private struct MiniPanelView: View {
                 Label(metric.rawValue, systemImage: symbol).font(.caption).foregroundStyle(.secondary)
                 Text(value).font(.system(size: 19, weight: .semibold, design: .rounded)).monospacedDigit()
                 Text(detail).font(.caption2).foregroundStyle(.secondary)
-                if let fraction { ProgressView(value: min(1, max(0, fraction))).tint(.accentColor) }
-                else { Color.clear.frame(height: 4) }
+                if let fraction { ProgressView(value: min(1, max(0, fraction))).tint(.accentColor) } else { Color.clear.frame(height: 4) }
             }.frame(height: 82, alignment: .topLeading).frame(maxWidth: .infinity, alignment: .leading).padding(10)
                 .background(selected == metric ? Color.accentColor.opacity(0.14) : Color.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: 10))
         }.buttonStyle(.plain).accessibilityElement(children: .ignore)

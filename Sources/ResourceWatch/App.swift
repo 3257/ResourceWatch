@@ -155,9 +155,11 @@ final class Monitor: ObservableObject {
             "\($0.name) · \(String(format: "%.1f", Double($0.memory) / gib)) GiB · \($0.members.count) process\($0.members.count == 1 ? "" : "es")"
         }
         networkSummary = String(format: "Network: ↓ %.1f · ↑ %.1f MB/s", m.network.download / 1e6, m.network.upload / 1e6)
-        networkDetails = [String(format: "Session: ↓ %.2f · ↑ %.2f GB", Double(m.network.received) / 1e9, Double(m.network.sent) / 1e9), "Interfaces: \(m.network.interfaces.joined(separator: ", "))", "Wi-Fi/Ethernet traffic, including local transfers"]
+        networkDetails = [String(format: "Session: ↓ %.2f · ↑ %.2f GB", Double(m.network.received) / 1e9, Double(m.network.sent) / 1e9),
+                          "Interfaces: \(m.network.interfaces.joined(separator: ", "))", "Wi-Fi/Ethernet traffic, including local transfers"]
         status = String(format: "CPU %.0f%% · %.0f GB free", m.cpu, Double(m.free) / 1e9)
-        details = String(format: "CPU: %.1f%% of all cores\nMemory pressure: %@\nSwap: %.2f GiB\nHome volume: %.1f / %.1f GB free\n\nTop CPU processes (100%% = one core):\n%@", m.cpu, m.pressure >= 4 ? "critical" : m.pressure >= 2 ? "warning" : "normal", Double(m.swap) / gib, Double(m.free) / 1e9, Double(m.total) / 1e9, m.processes)
+        details = String(format: "CPU: %.1f%% of all cores\nMemory pressure: %@\nSwap: %.2f GiB\nHome volume: %.1f / %.1f GB free\n\nTop CPU processes (100%% = one core):\n%@",
+                         m.cpu, m.pressure >= 4 ? "critical" : m.pressure >= 2 ? "warning" : "normal", Double(m.swap) / gib, Double(m.free) / 1e9, Double(m.total) / 1e9, m.processes)
         events = Array((newEvents.reversed() + events).prefix(30))
         if growing { currentWarnings.append("Storage growing quickly") }
         scanStorage(trigger: currentWarnings.contains("Low storage") || growing ? .storageAlert : .daily)
@@ -201,8 +203,7 @@ final class Monitor: ObservableObject {
                         ? "Test delivered to Notification Center"
                         : "Test submitted — check notification settings and Focus"
                 }
-            }
-            catch { notificationStatus = "Notification failed: \(error.localizedDescription)" }
+            } catch { notificationStatus = "Notification failed: \(error.localizedDescription)" }
         }
     }
 }
@@ -275,7 +276,9 @@ struct ResourceWatchApp: App {
                 Button("Send test notification", systemImage: "paperplane") { monitor.testNotification() }
                     .accessibilityLabel("Send test notification").accessibilityIdentifier("testNotification")
                 Button("Settings…", systemImage: "gearshape") { openWindow(id: "settings"); NSApp.activate(ignoringOtherApps: true) }.keyboardShortcut(",")
-                Button("Open Activity Monitor", systemImage: "gauge.with.dots.needle.33percent") { NSWorkspace.shared.open(URL(fileURLWithPath: "/System/Applications/Utilities/Activity Monitor.app")) }
+                Button("Open Activity Monitor", systemImage: "gauge.with.dots.needle.33percent") {
+                    NSWorkspace.shared.open(URL(fileURLWithPath: "/System/Applications/Utilities/Activity Monitor.app"))
+                }
                 Divider()
                 Button("Quit ResourceWatch", systemImage: "power") { NSApplication.shared.terminate(nil) }.keyboardShortcut("q")
         } label: {
