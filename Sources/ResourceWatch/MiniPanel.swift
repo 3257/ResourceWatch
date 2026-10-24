@@ -97,9 +97,7 @@ private struct MiniPanelView: View {
                     ForEach(monitor.growthAdvice.prefix(3)) { item in
                         let parts = Headline(item.title)
                         Menu {
-                            ForEach(item.actions.filter { if case .reveal = $0 { true } else { false } }, id: \.self) { action in
-                                Button(action.title, systemImage: action.symbol) { monitor.perform(action) }
-                            }
+                            RecommendationActions(recommendation: item, monitor: monitor)
                         } label: {
                             ValueRow(symbol: "arrow.up.right", tint: .orange, name: parts.name, value: parts.value?.replacing(" in the last hour", with: "") ?? "", options: true)
                         }.menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden)
@@ -110,14 +108,12 @@ private struct MiniPanelView: View {
                 ForEach(monitor.storageAdvice.prefix(3)) { item in
                     let parts = Headline(item.title)
                     Menu {
-                        ForEach(item.actions.filter { if case .copy = $0 { false } else { $0.isAvailable } }, id: \.self) { action in
-                            Button(action.title, systemImage: action.symbol) { monitor.perform(action) }
-                        }
+                        RecommendationActions(recommendation: item, monitor: monitor)
                     } label: {
                         ValueRow(symbol: "folder", tint: .secondary, name: parts.name, value: parts.value ?? "", options: true)
                     }.menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).accessibilityIdentifier("cleanup-\(item.id)")
                 }
-                Text("Click an item to show it in Finder or move it to the Trash. The menu has more options.").font(.caption).foregroundStyle(.secondary)
+                Text("Click an item to show it in Finder, run its cleanup script, move it to the Trash or ask AI.").font(.caption).foregroundStyle(.secondary)
             }
         }.textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
     }
