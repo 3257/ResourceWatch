@@ -172,6 +172,7 @@ private func worktreeFixture(_ root: URL) throws -> URL {
     #expect(orphans.detail.last == "1 folder whose project no longer exists: Gone.xcodeproj")
     #expect(orphans.command == "rm -rf '\(derivedData.path)/Gone-xyz'")
     #expect(orphans.trash == ["\(derivedData.path)/Gone-xyz"])
+    #expect(orphans.script?.arguments == ["--apply", "--only", "dd-gone"])
     let worktreeFindings = WorktreeReader.findings(roots: [root], derivedData: projects, now: Date().addingTimeInterval(2 * 86_400))
     #expect(worktreeFindings.allSatisfy { $0.trash.isEmpty })
     #expect((orphans.bytes ?? 0) >= 300_000 && (orphans.bytes ?? 0) < 500_000)

@@ -7,6 +7,9 @@ app="$PWD/dist/ResourceWatch.app"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
 cp .build/release/ResourceWatch "$app/Contents/MacOS/ResourceWatch"
 cp .build/app-icon/AppIcon.icns "$app/Contents/Resources/AppIcon.icns"
+# Remove first: cp -R into an existing folder nests the copy one level down.
+rm -rf "$app/Contents/Resources/Scripts"
+cp -R CleanupScripts "$app/Contents/Resources/Scripts"
 xcrun actool .build/app-icon/Assets.xcassets \
   --compile "$app/Contents/Resources" \
   --platform macosx --minimum-deployment-target 14.0 \

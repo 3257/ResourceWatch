@@ -10,23 +10,27 @@ struct StorageTarget: Sendable {
     var olderThanDays: Int?
     // Offers Move to Trash only for folders that their tools recreate; others need their own tool or a manual choice.
     var trashable = false
+    var script: CleanupScript?
 
     static let catalog: [StorageTarget] = [
         .init(name: "Xcode DerivedData", path: "Library/Developer/Xcode/DerivedData",
-              advice: "Xcode keeps build products, indexes and logs here for each project.\nDeleting it is safe. The next build of each project takes longer.\nQuit Xcode first, then delete the contents of the folder.", trashable: true),
+              advice: "Xcode keeps build products, indexes and logs here for each project.\nDeleting it is safe. The next build of each project takes longer.\nQuit Xcode first, then delete the contents of the folder.", trashable: true,
+              script: .devClean("dd-gone,dd-stale,dd-orphan", summary: "Lists DerivedData of deleted projects and of projects not opened for 30 days, then asks before it deletes each group.")),
         .init(name: "Xcode Archives", path: "Library/Developer/Xcode/Archives",
               advice: "Xcode keeps an archive of each build that you exported or uploaded.\nKeep archives of shipped builds if you need their symbols for crash reports.\nDelete old archives in Xcode → Window → Organizer."),
-        .init(name: "iOS DeviceSupport", path: "Library/Developer/Xcode/iOS DeviceSupport", advice: deviceSupport, trashable: true),
-        .init(name: "watchOS DeviceSupport", path: "Library/Developer/Xcode/watchOS DeviceSupport", advice: deviceSupport, trashable: true),
-        .init(name: "tvOS DeviceSupport", path: "Library/Developer/Xcode/tvOS DeviceSupport", advice: deviceSupport, trashable: true),
+        .init(name: "iOS DeviceSupport", path: "Library/Developer/Xcode/iOS DeviceSupport", advice: deviceSupport, trashable: true, script: deviceSupportScript),
+        .init(name: "watchOS DeviceSupport", path: "Library/Developer/Xcode/watchOS DeviceSupport", advice: deviceSupport, trashable: true, script: deviceSupportScript),
+        .init(name: "tvOS DeviceSupport", path: "Library/Developer/Xcode/tvOS DeviceSupport", advice: deviceSupport, trashable: true, script: deviceSupportScript),
         .init(name: "Simulator devices", path: "Library/Developer/CoreSimulator/Devices",
               advice: "Each simulator keeps its own apps, data and caches here.\nThe command removes only simulators whose runtime is no longer installed.\nRemove other simulators in Xcode → Window → Devices and Simulators.",
-              command: "xcrun simctl delete unavailable"),
+              command: "xcrun simctl delete unavailable",
+              script: .devClean("sims,runtimes", summary: "Lists simulators that are unavailable or not booted for 30 days, and runtimes no simulator uses, then asks before it deletes each group.")),
         .init(name: "Parallel testing simulator clones", path: "Library/Developer/XCTestDevices",
               advice: "Xcode clones simulators here to run tests in parallel. The clones are needed only while tests run.\nThe command deletes all clones. Xcode creates new ones for the next parallel test run.",
               command: "xcrun simctl --set testing delete all"),
         .init(name: "Swift Package Manager cache", path: "Library/Caches/org.swift.swiftpm",
-              advice: "Swift Package Manager keeps downloaded package repositories here.\nDeleting it is safe. Xcode downloads the packages again on the next resolve, which is slow for large projects.", trashable: true),
+              advice: "Swift Package Manager keeps downloaded package repositories here.\nDeleting it is safe. Xcode downloads the packages again on the next resolve, which is slow for large projects.", trashable: true,
+              script: .devClean("spm", summary: "Shows the size of the Swift Package Manager cache, then asks before it empties the cache.")),
         .init(name: "Xcode cache", path: "Library/Caches/com.apple.dt.Xcode",
               advice: "Xcode keeps download and documentation caches here.\nDeleting it is safe. Quit Xcode first.", trashable: true),
         .init(name: "Homebrew cache", path: "Library/Caches/Homebrew",
@@ -47,6 +51,7 @@ struct StorageTarget: Sendable {
               advice: "Top-level items in Downloads that did not change for 30 days.\nCheck the items and keep what you need before you delete the rest.",
               protected: true, olderThanDays: 30)
     ]
+    private static let deviceSupportScript = CleanupScript.devClean("devsupport", summary: "Lists DeviceSupport folders not changed for 30 days, then asks before it deletes them.")
     private static let deviceSupport = "Xcode copies debug symbols here for each OS version of a device that you connect.\nDelete the folders of OS versions that you no longer debug. Xcode copies them again when needed."
 }
 
@@ -59,6 +64,7 @@ struct StorageFinding: Equatable, Sendable {
     var detail: [String]
     var command: String?
     var trash: [String] = []
+    var script: CleanupScript?
 }
 
 enum ScanTrigger: Sendable { case manual, daily, storageAlert }
@@ -147,7 +153,7 @@ enum StorageScanner {
                 detail.append("Another \(StorageAdvisor.format(size.shared)) is shared with copies, such as simulator test clones. Deleting this folder frees that space only when the copies are gone too.")
             }
             return StorageFinding(id: target.path, title: target.name, path: url.path, bytes: size.bytes, complete: size.complete, detail: detail, command: target.command,
-                                  trash: target.trashable ? [url.path] : [])
+                                  trash: target.trashable ? [url.path] : [], script: target.script)
         }
     }
 }
@@ -170,7 +176,7 @@ enum StorageAdvisor {
             .map { finding in
                 let size = finding.bytes.map { (finding.complete ? "" : "at least ") + format($0) }
                 let title = size.map { "\(finding.title) — \($0)" } ?? finding.title
-                let actions: [Recommendation.Action] = [.reveal(finding.path)] + (finding.command.map { [.copy($0)] } ?? [])
+                let actions: [Recommendation.Action] = [.reveal(finding.path)] + (finding.command.map { [.copy($0)] } ?? []) + (finding.script.map { [.runScript($0)] } ?? [])
                     + (finding.trash.isEmpty ? [] : [.moveToTrash(title: title, paths: finding.trash)])
                 return Recommendation(id: "storage-\(finding.id)", title: title,
                                       detail: finding.detail + [(finding.path as NSString).abbreviatingWithTildeInPath] + Advisor.commandLines(actions),

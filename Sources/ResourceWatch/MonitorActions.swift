@@ -23,6 +23,15 @@ extension Monitor {
         case .activate(let pid): NSRunningApplication(processIdentifier: pid)?.activate()
         case .openActivityMonitor: NSWorkspace.shared.open(URL(fileURLWithPath: "/System/Applications/Utilities/Activity Monitor.app"))
         case .moveToTrash(let title, let paths): confirmTrash(title: title, paths: paths)
+        case .runScript(let script): run(script)
+        }
+    }
+    func run(_ script: CleanupScript) {
+        do {
+            guard let command = script.command(in: CleanupScript.folder) else { throw CocoaError(.fileNoSuchFile) }
+            try TerminalLauncher.open(executable: command.executable, arguments: command.arguments, directory: NSHomeDirectory())
+        } catch {
+            events.insert("Could not run \(script.file)\n\(error.localizedDescription)", at: 0)
         }
     }
     func confirmTrash(title: String, paths: [String]) {
