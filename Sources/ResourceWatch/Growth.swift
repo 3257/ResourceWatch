@@ -283,5 +283,11 @@ enum GrowthAdvisor {
         return measured + unmeasured
     }
 
+    /// The notification hint for a storage growth alert. The growth report can lag the alert by a minute, so an empty report does not prove that no folder grew.
+    static func alertHint(_ growth: [Recommendation]) -> String {
+        growth.first.map { "Fastest growth: \($0.title)" }
+            ?? "ResourceWatch has not found a growing folder in your home folder yet. Local snapshots, swap or files outside your home folder can use the space."
+    }
+
     private static func display(_ path: String) -> String { (path as NSString).abbreviatingWithTildeInPath }
 }
