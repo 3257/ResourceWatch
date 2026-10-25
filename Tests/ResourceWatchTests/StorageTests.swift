@@ -193,7 +193,8 @@ private func worktreeFixture(_ root: URL) throws -> URL {
     #expect(catalog["Library/Developer/Xcode/DerivedData"] == true)
     #expect(catalog["Library/Caches/org.swift.swiftpm"] == true)
     for path in ["Library/Developer/Xcode/Archives", "Library/Developer/CoreSimulator/Devices", "Library/Developer/XCTestDevices",
-                 ".Trash", "Downloads", "Library/Application Support/MobileSync/Backup"] {
+                 ".Trash", "Downloads", "Library/Application Support/MobileSync/Backup",
+                 ".tart", "Parallels", "Library/Group Containers/HUAQ24HBR6.dev.orbstack/data"] {
         #expect(catalog[path] == false, "\(path) must not offer Move to Trash")
     }
 }

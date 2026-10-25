@@ -86,6 +86,7 @@ ResourceWatch never quits apps, never empties the Trash, and moves files to the 
 The **Storage cleanup** submenu lists items of 1 GB or more, largest first:
 
 - Known developer and cache folders: Xcode DerivedData, Archives and DeviceSupport, simulator devices, Swift Package Manager, Homebrew, CocoaPods, npm and Gradle caches, the Trash, device backups, and Downloads items unchanged for 30 days.
+- Virtual machine disks of Tart, Parallels Desktop and OrbStack. A VM disk image grows as the guest writes, so free space can drop while no other file changes. When free space drops quickly and no folder in your home folder grew, the alert says so and points to local snapshots, swap and files outside your home folder.
 - Xcode DerivedData folders whose project no longer exists.
 - Git worktrees in your project folders whose branch is merged into the default branch, or that have no git activity for 14 days. A worktree's size includes its Xcode DerivedData folders.
 

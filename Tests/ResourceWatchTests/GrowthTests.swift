@@ -166,6 +166,16 @@ private let mb: Int64 = 1_000_000
     #expect(advice[1].detail.contains { $0.hasPrefix("macOS protects this folder") })
 }
 
+@Test func growingVirtualMachineGetsItsToolAdviceAndTheAlertHintNamesOtherCauses() {
+    let report = GrowthReport(entries: [GrowthEntry(path: "\(home)/.tart/vms/ci", bytes: 6_000 * mb, changes: 3)], total: 6_000 * mb)
+    let advice = GrowthAdvisor.advice(report, home: home)
+    #expect(advice[0].detail.contains { $0.hasPrefix("A disk image grows as the virtual machine writes to it") })
+    #expect(advice[0].actions == [.copy("tart prune --entries caches --older-than 7")])
+    let hint = GrowthAdvisor.alertHint(advice)
+    #expect(hint.hasPrefix("Fastest growth: ") && hint.hasSuffix(".tart/vms/ci — +6.0 GB in the last hour"))
+    #expect(GrowthAdvisor.alertHint([]).hasPrefix("No folder in your home folder grew."))
+}
+
 @Test func deepSplitsReportTheirCommonParentAndOldDropsExpire() {
     var ledger = GrowthLedger(home: home)
     let now = Date()

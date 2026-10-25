@@ -174,8 +174,8 @@ final class Monitor: ObservableObject {
     private func hint(for alert: WatchAlert, _ m: Metrics) -> String? {
         let parts = alert.key.split(separator: "-", maxSplits: 2)
         if parts.count == 3, parts[0] == "process" { return Advisor.processHint(identity: String(parts[2]), samples: m.processSamples) }
-        if alert.key == "growth", let fastest = growthAdvice.first { return "Fastest growth: \(fastest.title)" }
-        if alert.key == "disk" || alert.key == "growth" { return storageAdvice.first.map { "Largest cleanup: \($0.title)" } }
+        if alert.key == "growth" { return GrowthAdvisor.alertHint(growthAdvice) }
+        if alert.key == "disk" { return storageAdvice.first.map { "Largest cleanup: \($0.title)" } }
         return nil
     }
     func addProjectFolder() {

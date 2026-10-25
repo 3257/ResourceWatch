@@ -49,6 +49,16 @@ struct StorageTarget: Sendable {
               command: "npm cache clean --force", trashable: true),
         .init(name: "Gradle caches", path: ".gradle/caches",
               advice: "Gradle keeps downloaded dependencies and build caches here.\nDeleting it is safe when no Gradle build runs. The next build downloads dependencies again.", trashable: true),
+        .init(name: "Tart virtual machines", path: ".tart",
+              advice: "Tart keeps local virtual machines in vms and downloaded base images in cache.\n" + vmGrowth
+                + "Delete a VM that you no longer need with tart delete <name>. The command removes base images that Tart did not use for 7 days.",
+              command: "tart prune --entries caches --older-than 7"),
+        .init(name: "Parallels virtual machines", path: "Parallels",
+              advice: "Parallels Desktop keeps virtual machines here by default.\n" + vmGrowth + "Remove virtual machines that you no longer need in Parallels Desktop."),
+        .init(name: "OrbStack data", path: "Library/Group Containers/HUAQ24HBR6.dev.orbstack/data",
+              advice: "OrbStack keeps containers, images, volumes and Linux machines in one disk image here. The image shrinks when you delete data in OrbStack.\n"
+                + "The command asks, then removes stopped containers, unused networks, dangling images and unused build cache.",
+              command: "docker system prune", protected: true),
         .init(name: "Trash", path: ".Trash", advice: "Files in the Trash still use disk space.\nEmpty the Trash in Finder to free it."),
         .init(name: "iPhone and iPad backups", path: "Library/Application Support/MobileSync/Backup",
               advice: "Finder keeps full backups of iPhones and iPads here.\nDelete old backups in Finder: select the device, then Manage Backups."),
@@ -57,6 +67,7 @@ struct StorageTarget: Sendable {
               protected: true, olderThanDays: 30)
     ]
     private static let deviceSupportScript = CleanupScript.devClean("devsupport", summary: "Lists DeviceSupport folders not changed for 30 days, then asks before it deletes them.")
+    private static let vmGrowth = "A disk image grows as the virtual machine writes to it, so free space can drop while no other file changes.\n"
     private static let deviceSupport = "Xcode copies debug symbols here for each OS version of a device that you connect.\n"
         + "Delete the folders of OS versions that you no longer debug. Xcode copies them again when needed."
 }
