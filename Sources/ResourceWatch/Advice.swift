@@ -96,7 +96,7 @@ enum Advisor {
             var title = String(format: "%@: %.1f GiB RAM", group.name, Double(group.memory) / gib)
             if group.members.count > 1 { title += " in \(group.members.count) processes" }
             if group.cpu >= settings.processCPUPercent { title += String(format: " · %.0f%% CPU", group.cpu) }
-            let tip = tip(for: group)
+            let tip = tip(for: group, samples: m.processSamples)
             var detail = tip.about
             if m.memoryTotal > 0 {
                 detail.append(String(format: "Uses %.0f%% of your %.0f GiB RAM.", Double(group.memory) / Double(m.memoryTotal) * 100, Double(m.memoryTotal) / gib))
@@ -113,7 +113,7 @@ enum Advisor {
     static func processHint(identity: String, samples: [ProcessSample]) -> String? {
         guard let group = groups(samples).first(where: { $0.members.contains { $0.identity == identity } }) else { return nil }
         let summary = group.members.count > 1 ? String(format: "%@ uses %.1f GiB in %d processes. ", group.name, Double(group.memory) / gib, group.members.count) : ""
-        return summary + tip(for: group).text
+        return summary + tip(for: group, samples: samples).text
     }
 
     static func commandLines(_ actions: [Recommendation.Action]) -> [String] {
@@ -128,6 +128,8 @@ enum Advisor {
 
     private static func displayName(_ name: String) -> String {
         if name.hasPrefix("com.apple.WebKit") { return "Safari and WebKit pages" }
+        // macOS truncates the process name com.apple.Virtualization.VirtualMachine to 31 characters.
+        if name.hasPrefix("com.apple.Virtualization.Virtu") { return "Virtual machines" }
         return name == "launchd_sim" ? "Running simulators" : name
     }
 
@@ -137,7 +139,20 @@ enum Advisor {
         var actions: [Recommendation.Action]
     }
 
-    private static func tip(for group: AppGroup) -> Tip {
+    /// The app behind a process name. Virtual machines run in a process of launchd, so the running apps are the only clue to their owner.
+    private static func vmApp(_ name: String) -> String? {
+        switch name {
+        case "tart": "Tart"
+        case "limactl": "Lima"
+        case "UTM", "QEMULauncher": "UTM"
+        case "Docker Desktop", "com.docker.backend": "Docker Desktop"
+        case _ where name.hasPrefix("Parallels") || name.hasPrefix("prl_"): "Parallels Desktop"
+        case _ where name.hasPrefix("OrbStack"): "OrbStack"
+        default: nil
+        }
+    }
+
+    private static func tip(for group: AppGroup, samples: [ProcessSample]) -> Tip {
         let name = group.name
         if chromium.contains(where: { name.hasPrefix($0) }) {
             return Tip(about: ["\(name) runs each tab, extension and the GPU in a separate helper process.",
@@ -163,7 +178,17 @@ enum Advisor {
                        text: "Shut down simulators you do not use. The command shuts down all of them; their apps and data stay.",
                        actions: [.copy("xcrun simctl shutdown all")])
         }
-        if name.hasPrefix("com.docker") || name.hasPrefix("Docker") || name.contains("qemu") || name.contains("Virtualization") {
+        if name == "Virtual machines" || name.contains("qemu") {
+            let apps = Set(samples.compactMap { vmApp($0.name) }).sorted()
+            let tart = apps.contains("Tart"), docker = apps == ["Docker Desktop"]
+            return Tip(about: ["macOS runs virtual machines in this process. A running machine keeps the memory that its settings give it, even when it is idle.",
+                               apps.isEmpty ? "No known virtual machine app runs now, such as Tart, UTM, Parallels Desktop, OrbStack or Docker Desktop."
+                                            : "Virtual machine apps that run now: \(apps.joined(separator: ", "))."],
+                       text: "Stop the virtual machines that you do not use, or give them less memory in their settings."
+                           + (tart ? " The command lists Tart's machines. Stop one with tart stop <name>." : docker ? " The command stops all running containers." : ""),
+                       actions: tart ? [.copy("tart list")] : docker ? [.copy("docker stop $(docker ps -q)")] : [.openActivityMonitor])
+        }
+        if name.hasPrefix("com.docker") || name.hasPrefix("Docker") {
             return Tip(about: ["Docker Desktop runs a Linux virtual machine. The machine keeps its memory, up to the Docker limit, even when containers are idle."],
                        text: "Stop idle containers, or lower the limit in Docker Desktop → Settings → Resources. The command stops all running containers.",
                        actions: [.copy("docker stop $(docker ps -q)")])

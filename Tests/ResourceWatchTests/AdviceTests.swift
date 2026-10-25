@@ -64,3 +64,17 @@ private func sample(_ pid: Int32, _ parent: Int32, _ name: String, gib: Double, 
     m.processSamples = [sample(50, 1, "launchd_sim", gib: 0.1, cpu: 40)]
     #expect(Advisor.processAdvice(m, settings: WatchSettings()).isEmpty)
 }
+
+@Test func virtualMachinesNameTheRunningVMAppInsteadOfDocker() throws {
+    var m = Metrics(cpu: 10, pressure: 1, swap: 0, free: 0, total: 0, processes: "")
+    m.processSamples = [sample(41560, 1, "com.apple.Virtualization.Virtua", gib: 22.8), sample(41557, 1, "tart", gib: 0.1), sample(790, 1, "com.docker.vmnetd", gib: 0)]
+    let vm = try #require(Advisor.processAdvice(m, settings: WatchSettings()).first)
+    #expect(vm.title == "Virtual machines: 22.8 GiB RAM")
+    #expect(vm.detail.contains("Virtual machine apps that run now: Tart."))
+    #expect(!vm.detail.contains { $0.contains("Docker") })
+    #expect(vm.actions == [.copy("tart list")])
+    m.processSamples = [sample(41560, 1, "com.apple.Virtualization.Virtua", gib: 22.8)]
+    let unknown = try #require(Advisor.processAdvice(m, settings: WatchSettings()).first)
+    #expect(unknown.detail.contains { $0.hasPrefix("No known virtual machine app runs now") })
+    #expect(unknown.actions == [.openActivityMonitor])
+}
