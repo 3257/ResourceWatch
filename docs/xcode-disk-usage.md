@@ -80,4 +80,4 @@ Sometimes free space drops faster than any folder grows. Look for these causes o
 - **Local snapshots.** `tmutil listlocalsnapshots /` lists Time Machine and macOS update snapshots. A staged macOS update keeps its snapshot until you install the update.
 - **Swap.** `sysctl vm.swapusage` shows the swap in use. macOS writes swap files to `/System/Volumes/VM` when memory is full.
 
-ResourceWatch reports this case as growth that free space cannot explain.
+When free space drops quickly and ResourceWatch has not found a growing folder in your home folder, its growth alert points to these causes.
