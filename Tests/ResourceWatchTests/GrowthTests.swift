@@ -173,7 +173,7 @@ private let mb: Int64 = 1_000_000
     #expect(advice[0].actions == [.copy("tart prune --entries caches --older-than 7")])
     let hint = GrowthAdvisor.alertHint(advice)
     #expect(hint.hasPrefix("Fastest growth: ") && hint.hasSuffix(".tart/vms/ci — +6.0 GB in the last hour"))
-    #expect(GrowthAdvisor.alertHint([]).hasPrefix("No folder in your home folder grew."))
+    #expect(GrowthAdvisor.alertHint([]).hasPrefix("ResourceWatch has not found a growing folder in your home folder yet."))
 }
 
 @Test func deepSplitsReportTheirCommonParentAndOldDropsExpire() {
