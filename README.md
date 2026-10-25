@@ -32,6 +32,22 @@ Actual app captures with example live readings and selected thresholds. The sugg
 
 ## Install and run
 
+### Homebrew
+
+```bash
+brew install --cask 3257/tap/resourcewatch
+```
+
+The download needs a Mac with Apple Silicon and macOS 14 or later. The app is ad-hoc signed and not notarized, so macOS blocks its first launch:
+
+1. Open ResourceWatch from Applications. macOS says that it cannot verify the app. Click **Done**.
+2. Open **System Settings → Privacy & Security**. Under **Security**, click **Open Anyway** next to the ResourceWatch message.
+3. Confirm with your password or Touch ID. Later launches open normally.
+
+Update with `brew upgrade --cask resourcewatch`. Each update is a new download, so macOS can block the first launch again. Uninstall with `brew uninstall --zap --cask resourcewatch`, which also removes the preferences.
+
+### Build from source
+
 Requirements: a Mac running macOS 14 or later, Git, and full Xcode 16 or later (Swift 6 and the asset-catalog compiler). Standalone Command Line Tools are insufficient for app-icon compilation. The current implementation was tested on Apple Silicon; Intel has not been validated.
 
 ```bash
@@ -43,13 +59,15 @@ open dist/ResourceWatch.app
 
 The build creates a locally ad-hoc signed app. It does not need an Apple Developer account and is not a notarized release download. The app lives in the menu bar, without a Dock icon. To install at a stable location, copy `dist/ResourceWatch.app` to `~/Applications` (create that folder if necessary), quit any running copy, and open the installed copy before enabling login startup.
 
+After pulling updates, run `bash build.sh` again and replace your installed copy while the old app is quit. To uninstall, turn off **Launch at login**, quit the app and delete its app bundle. Preferences remain in the local `io.github.3257.ResourceWatch` defaults domain.
+
+### First run
+
 1. Click the pulse icon and choose **Enable notifications**; approve the macOS prompt.
 2. Choose **Send test notification** to check delivery.
 3. Open **Settings…** to adjust the sliders and optionally enable login startup or menu bar percentages.
 4. Choose **Show mini panel** for the live dashboard. Its pin keeps it above other windows; closing it leaves monitoring running.
 5. Choose **Quit ResourceWatch** from the menu to stop monitoring.
-
-After pulling updates, run `bash build.sh` again and replace your installed copy while the old app is quit. To uninstall, turn off **Launch at login**, quit the app and delete its app bundle. Preferences remain in the local `local.resourcewatch.app` defaults domain.
 
 ## Features and thresholds
 

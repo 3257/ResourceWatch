@@ -1,0 +1,37 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*.*.*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: macos-26
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          # build.sh numbers the build by the commit count, which needs the full history.
+          fetch-depth: 0
+      - name: Test
+        run: swift test
+      - name: Build the app bundle
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}" bash build.sh
+          codesign --verify --strict dist/ResourceWatch.app
+          test "$(plutil -extract CFBundleShortVersionString raw dist/ResourceWatch.app/Contents/Info.plist)" = "${GITHUB_REF_NAME#v}"
+      - name: Zip the app
+        run: |
+          zip="ResourceWatch-${GITHUB_REF_NAME#v}.zip"
+          ditto -c -k --keepParent dist/ResourceWatch.app "$zip"
+          echo "ZIP=$zip" >> "$GITHUB_ENV"
+          echo "SHA256=$(shasum -a 256 "$zip" | cut -d ' ' -f 1)" >> "$GITHUB_ENV"
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" "$ZIP" --verify-tag --generate-notes \
+            --notes "Install with \`brew install --cask 3257/tap/resourcewatch\`. SHA-256 of $ZIP: \`$SHA256\`"
