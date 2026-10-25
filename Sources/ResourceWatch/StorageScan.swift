@@ -15,7 +15,10 @@ struct StorageTarget: Sendable {
     static let catalog: [StorageTarget] = [
         .init(name: "Xcode DerivedData", path: "Library/Developer/Xcode/DerivedData",
               advice: "Xcode keeps build products, indexes and logs here for each project.\nDeleting it is safe. The next build of each project takes longer.\n"
-                + "Quit Xcode first, then delete the contents of the folder.", trashable: true,
+                + "Quit Xcode first, then delete the contents of the folder.\n"
+                + "Each clone or worktree of a project gets its own folder here, with its own copy of every package. Keep few worktrees of large projects.\n"
+                + "Command-line builds of checkouts with the same package versions can share one package copy: pass the same -clonedSourcePackagesDirPath to xcodebuild.",
+              trashable: true,
               script: .devClean("dd-gone,dd-stale,dd-orphan", summary: "Lists DerivedData of deleted projects and of projects not opened for 30 days, then asks before it deletes each group.")),
         .init(name: "Xcode Archives", path: "Library/Developer/Xcode/Archives",
               advice: "Xcode keeps an archive of each build that you exported or uploaded.\nKeep archives of shipped builds if you need their symbols for crash reports.\n"
@@ -30,6 +33,7 @@ struct StorageTarget: Sendable {
               script: .devClean("sims,runtimes", summary: "Lists simulators that are unavailable or not booted for 30 days, and runtimes no simulator uses, then asks before it deletes each group.")),
         .init(name: "Parallel testing simulator clones", path: "Library/Developer/XCTestDevices",
               advice: "Xcode clones simulators here to run tests in parallel. The clones are needed only while tests run.\n"
+                + "Xcode makes one clone for each parallel test runner. To make fewer clones, pass -maximum-parallel-testing-workers to xcodebuild test.\n"
                 + "The command deletes all clones. Xcode creates new ones for the next parallel test run.",
               command: "xcrun simctl --set testing delete all",
               script: .devClean("xctest", summary: "Shows how many clones there are and the space only they use, then asks before it deletes them all.")),

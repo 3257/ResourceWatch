@@ -211,3 +211,19 @@ private func worktreeFixture(_ root: URL) throws -> URL {
     #expect(!TrashPolicy.allows(["/Library/Caches/tool"], home: home))
     #expect(!TrashPolicy.allows(["/Users/x/Library/Caches/tool", "/etc/hosts"], home: home))
 }
+
+@Test func xcodeAdviceNamesOptionsThatXcodebuildAccepts() throws {
+    let process = Process(), output = Pipe()
+    process.executableURL = URL(fileURLWithPath: "/usr/bin/xcodebuild")
+    process.arguments = ["-help"]
+    process.standardOutput = output
+    process.standardError = output
+    try process.run()
+    let help = String(bytes: output.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+    process.waitUntilExit()
+    let advice = Dictionary(uniqueKeysWithValues: StorageTarget.catalog.map { ($0.path, $0.advice) })
+    for (path, option) in [("Library/Developer/Xcode/DerivedData", "-clonedSourcePackagesDirPath"), ("Library/Developer/XCTestDevices", "-maximum-parallel-testing-workers")] {
+        #expect(advice[path]?.contains(option) == true, "\(path) advice must name \(option)")
+        #expect(help.contains(option), "xcodebuild -help must list \(option)")
+    }
+}
