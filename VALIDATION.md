@@ -74,3 +74,14 @@ Added a compiled AppIcon asset catalog, declared CFBundleIconName alongside CFBu
 - The `GrowthTracker` stream now retains the tracker. With a second tracker test, `swift test` crashed with signal 11 in 1 of 5 runs; after the change, 12 of 12 runs passed. `main` passed 6 of 6 runs before the change.
 - Tests: clone sizes in a temporary folder (`copyfile` with `COPYFILE_CLONE`), a live tracker that ignores five clones and counts a new 2 MB file, symmetric counting past the file limit, and the free-space check with the 1001.9 GB case. 45 tests passed.
 - Not yet checked in the running app: the panel and menu after an hour of parallel UI tests.
+
+## Cleanup script parity and Xcode disk guide — 2026-10-25
+
+- `dev_clean.py` has a new `xctest` category for parallel-testing simulator clones. It deletes them with `xcrun simctl --set testing delete all`, the same command as the app's cleanup row. That row now also offers the script.
+- The script now measures private size with `getattrlist(ATTR_CMNEXT_PRIVATESIZE)`, as the app does, instead of `du -sk`. It names shared space of 1 GB or more, and it reports "Could free at least …".
+- Measured on this Mac: the Python walk gave the same DerivedData numbers as the app's Swift code, 27.4 GB private and 36.9 GB shared. One worktree's DerivedData folder showed 13.1 GB with `du`, and 3.2 GB private with 9.9 GB shared.
+- A full walk of 129 test clones (about 8 million files) took 185 s; `du -sk` took 113 s. A threaded walk was slower. So each item stops after 30 s and is marked "measured for 30 s only". The run showed 0 MB private and 252.3 GB shared; `du` showed 1.7 TB for the folder on a 926 GB volume.
+- A dry run of `--days 7 --only dd-gone,dd-stale,dd-orphan,sims,xctest` took 38 s and reported at least 25.5 GB.
+- Tests: an 8 MB `cp -c` clone inside a DerivedData folder reports 0 MB; a fake `XCTestDevices` clone reports 2 MB and still exists after `--apply` without a terminal; the catalog row maps to `--only xctest`. 52 tests passed and `swiftlint lint --strict` reported nothing.
+- `docs/xcode-disk-usage.md`: the `xcodebuild` options were checked against `xcodebuild -help` of Xcode 26.5, the `simctl` commands against `xcrun simctl help`, and the Tart commands against `tart prune --help`.
+- Not covered: `--apply --only xctest` with a terminal against real clones, and **Run script in Terminal** on the new row in the running app.

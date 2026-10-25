@@ -13,8 +13,14 @@ Categories:
   runtimes    Simulator runtimes that no device uses
   devsupport  iOS/watchOS DeviceSupport entries not modified for --days
   spm         SwiftPM download cache (packages download again on next resolve)
+  xctest      Parallel testing simulator clones (Xcode makes new ones for each run)
 
 Shared DerivedData caches (*.noindex) are never touched.
+
+Sizes count only blocks that no APFS clone shares, so deleting an item frees at
+least that much. Simulator test clones and DerivedData packages are mostly
+clones; plain du counts each clone in full. Measuring one item stops after
+30 seconds, and its size is then a minimum.
 
 Usage:
   dev_clean.py                     # report everything, --days 30
@@ -23,24 +29,73 @@ Usage:
   dev_clean.py --apply --only dd-gone
 """
 import argparse
+import ctypes
 import datetime as dt
 import json
 import os
 import plistlib
 import shutil
+import stat
 import subprocess
 import sys
+import time
 
 HOME = os.path.expanduser("~")
 DERIVED = f"{HOME}/Library/Developer/Xcode/DerivedData"
 DEVSUPPORT = [f"{HOME}/Library/Developer/Xcode/{p} DeviceSupport" for p in ("iOS", "watchOS", "tvOS", "visionOS")]
 SPM_CACHE = f"{HOME}/Library/Caches/org.swift.swiftpm"
-CATEGORIES = ["dd-gone", "dd-stale", "dd-orphan", "sims", "runtimes", "devsupport", "spm"]
+XCTEST = f"{HOME}/Library/Developer/XCTestDevices"
+CATEGORIES = ["dd-gone", "dd-stale", "dd-orphan", "sims", "runtimes", "devsupport", "spm", "xctest"]
+TIME_LIMIT = 30
 
 
-def du_kb(path):
-    out = subprocess.run(["du", "-sk", path], capture_output=True, text=True).stdout
-    return int(out.split()[0]) if out else 0
+class AttrList(ctypes.Structure):
+    _fields_ = [("bitmapcount", ctypes.c_ushort), ("reserved", ctypes.c_uint16), ("commonattr", ctypes.c_uint32),
+                ("volattr", ctypes.c_uint32), ("dirattr", ctypes.c_uint32), ("fileattr", ctypes.c_uint32),
+                ("forkattr", ctypes.c_uint32)]
+
+
+LIBC = ctypes.CDLL(None, use_errno=True)
+LIBC.getattrlist.argtypes = [ctypes.c_char_p, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_size_t, ctypes.c_uint32]
+# ATTR_BIT_MAP_COUNT, forkattr ATTR_CMNEXT_PRIVATESIZE; options FSOPT_ATTR_CMN_EXTENDED | FSOPT_NOFOLLOW.
+PRIVATE_SIZE_REQUEST = AttrList(5, 0, 0, 0, 0, 0, 0x8)
+PRIVATE_SIZE_OPTIONS = 0x20 | 0x1
+
+
+def private_size(path):
+    """Bytes of a file that no clone shares, or None where the volume does not report it (not APFS)."""
+    buffer = ctypes.create_string_buffer(16)
+    if LIBC.getattrlist(os.fsencode(path), ctypes.byref(PRIVATE_SIZE_REQUEST), buffer, len(buffer), PRIVATE_SIZE_OPTIONS) != 0:
+        return None
+    # The kernel packs the reply at 4-byte alignment: a UInt32 length, then the off_t.
+    return int.from_bytes(buffer.raw[4:12], "little", signed=True)
+
+
+def size_of(*paths):
+    """Private and clone-shared bytes in KB, and whether the walk finished within TIME_LIMIT."""
+    own = shared = count = 0
+    deadline = time.monotonic() + TIME_LIMIT
+    stack = [p for p in paths if os.path.lexists(p)]
+    while stack:
+        path = stack.pop()
+        try:
+            st = os.lstat(path)
+        except OSError:
+            continue
+        allocated = st.st_blocks * 512
+        own_bytes = private_size(path) if stat.S_ISREG(st.st_mode) else None
+        own_bytes = allocated if own_bytes is None else own_bytes
+        own += own_bytes
+        shared += allocated - own_bytes
+        if stat.S_ISDIR(st.st_mode):
+            try:
+                stack.extend(os.path.join(path, name) for name in os.listdir(path))
+            except OSError:
+                pass
+        count += 1
+        if count % 2000 == 0 and time.monotonic() > deadline:
+            return {"kb": own // 1024, "shared_kb": shared // 1024, "complete": False}
+    return {"kb": own // 1024, "shared_kb": shared // 1024, "complete": True}
 
 
 def human(kb):
@@ -90,7 +145,7 @@ def derived_data(days):
         elif age_days(mtime_utc(path)) >= days:
             orphan.append({**item, "label": f"{name}  (no info.plist, {age_days(mtime_utc(path))} days)"})
     for item in gone + stale + orphan:
-        item["kb"] = du_kb(item["path"])
+        item.update(size_of(item["path"]))
     return gone, stale, orphan
 
 
@@ -119,7 +174,7 @@ def simulators(days):
             short_rt = runtime.rsplit(".", 1)[-1]
             items.append({
                 "label": f"{d['name']} {short_rt}  {d['udid']}  ({why})",
-                "kb": (d.get("dataPathSize", 0) + d.get("logPathSize", 0)) // 1024,
+                **size_of(d["dataPath"], d.get("logPath", "")),
                 "remove": lambda u=d["udid"]: subprocess.run(["xcrun", "simctl", "delete", u], check=True),
                 "runtime": runtime,
             })
@@ -150,7 +205,7 @@ def device_support(days):
                 continue
             items.append({
                 "label": f"{os.path.basename(root)}/{name}  ({age_days(mtime_utc(path))} days)",
-                "kb": du_kb(path),
+                **size_of(path),
                 "remove": lambda p=path: shutil.rmtree(p),
             })
     return items
@@ -165,7 +220,25 @@ def spm_cache():
             p = os.path.join(SPM_CACHE, name)
             shutil.rmtree(p) if os.path.isdir(p) and not os.path.islink(p) else os.remove(p)
 
-    return [{"label": f"{SPM_CACHE}/*  (whole cache)", "kb": du_kb(SPM_CACHE), "remove": clear}]
+    return [{"label": f"{SPM_CACHE}/*  (whole cache)", **size_of(SPM_CACHE), "remove": clear}]
+
+
+def test_clones():
+    if not os.path.isdir(XCTEST):
+        return []
+    clones = [n for n in os.listdir(XCTEST) if os.path.isdir(os.path.join(XCTEST, n)) and not os.path.islink(os.path.join(XCTEST, n))]
+    if not clones:
+        return []
+
+    def remove():
+        # "delete all" also takes clones made after the listing, so refuse if a test run started during the prompt.
+        busy = running("xcodebuild", "XCTRunner")
+        if busy:
+            raise RuntimeError(f"{', '.join(busy)} started; nothing was deleted")
+        # simctl also removes the clones from its device set, which deleting the folders would leave behind.
+        subprocess.run(["xcrun", "simctl", "--set", "testing", "delete", "all"], check=True)
+
+    return [{"label": f"{len(clones)} clone(s) in {XCTEST}", **size_of(XCTEST), "remove": remove}]
 
 
 def confirm(question):
@@ -180,7 +253,12 @@ def report_and_apply(category, title, items, apply):
     total = sum(i["kb"] for i in items)
     print(f"\n== {category}: {title} — {len(items)} item(s), {human(total)}")
     for i in sorted(items, key=lambda i: -i["kb"]):
-        print(f"   {human(i['kb']):>8}  {i['label']}")
+        notes = ""
+        if i.get("shared_kb", 0) * 1024 >= 1e9:
+            notes += f"  [another {human(i['shared_kb'])} is shared with clones]"
+        if not i.get("complete", True):
+            notes += f"  [measured for {TIME_LIMIT} s only]"
+        print(f"   {human(i['kb']):>8}  {i['label']}{notes}")
     if not apply or not items:
         return total
     if not confirm(f"   Delete these {len(items)} item(s), {human(total)}? [y/N] "):
@@ -193,7 +271,7 @@ def report_and_apply(category, title, items, apply):
             freed += i["kb"]
         except Exception as e:  # keep going; report the failure
             print(f"   FAILED {i['label']}: {e}")
-    print(f"   freed about {human(freed)}")
+    print(f"   freed at least {human(freed)}")
     return freed
 
 
@@ -238,8 +316,10 @@ def main():
         freed += report_and_apply("devsupport", f"DeviceSupport not modified for {args.days}+ days", device_support(args.days), args.apply)
     if "spm" in only:
         freed += report_and_apply("spm", "SwiftPM download cache", spm_cache(), args.apply)
+    if "xctest" in only:
+        freed += report_and_apply("xctest", "Parallel testing simulator clones", test_clones(), args.apply)
 
-    print(f"\n{'Freed' if args.apply else 'Could free'} about {human(freed)}.")
+    print(f"\n{'Freed' if args.apply else 'Could free'} at least {human(freed)}.")
     if refused:
         print(f"Nothing was deleted, because {', '.join(busy)} running.")
     elif not args.apply:
