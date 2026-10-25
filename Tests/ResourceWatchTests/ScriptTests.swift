@@ -51,6 +51,7 @@ private func run(_ executable: String, _ arguments: [String], environment: [Stri
     #expect(only["Library/Developer/Xcode/DerivedData"] == "--apply --only dd-gone,dd-stale,dd-orphan")
     #expect(only["Library/Developer/CoreSimulator/Devices"] == "--apply --only sims,runtimes")
     #expect(only["Library/Caches/org.swift.swiftpm"] == "--apply --only spm")
+    #expect(only["Library/Developer/XCTestDevices"] == "--apply --only xctest")
     for platform in ["iOS", "watchOS", "tvOS"] {
         #expect(only["Library/Developer/Xcode/\(platform) DeviceSupport"] == "--apply --only devsupport")
     }
@@ -114,4 +115,27 @@ private func run(_ executable: String, _ arguments: [String], environment: [Stri
     #expect(try run("/usr/bin/python3", ["-I", script, "--help"], environment: environment).status == 0)
     #expect(try run("/usr/bin/python3", ["-I", script, "--bogus"], environment: environment).status != 0)
     #expect(try run("/usr/bin/python3", ["-I", script, "--only", "bogus"], environment: environment).status != 0)
+}
+
+@Test func devCleanCountsClonesByPrivateSizeAndKeepsTestClones() throws {
+    let home = try folder()
+    defer { try? FileManager.default.removeItem(at: home) }
+    let source = home.appending(path: "source.bin")
+    try Data(repeating: 7, count: 8_000_000).write(to: source)
+    let gone = home.appending(path: "Library/Developer/Xcode/DerivedData/Gone-xyz")
+    try FileManager.default.createDirectory(at: gone, withIntermediateDirectories: true)
+    try PropertyListSerialization.data(fromPropertyList: ["WorkspacePath": "/nonexistent/Gone.xcodeproj"], format: .xml, options: 0).write(to: gone.appending(path: "info.plist"))
+    #expect(try run("/bin/cp", ["-c", source.path, gone.appending(path: "clone.bin").path]).status == 0)
+    let clone = home.appending(path: "Library/Developer/XCTestDevices/0000-CLONE")
+    try FileManager.default.createDirectory(at: clone, withIntermediateDirectories: true)
+    try Data(repeating: 1, count: 2_000_000).write(to: clone.appending(path: "data.bin"))
+    let script = scripts.appending(path: "dev_clean.py").path
+
+    let result = try run("/usr/bin/python3", ["-I", script, "--apply", "--only", "dd-gone,xctest"], environment: ["HOME": home.path, "PATH": "/usr/bin:/bin"])
+    #expect(result.status == 0, "\(result.output)")
+    // du counts the 8 MB clone in full; only the blocks no clone shares are freed.
+    #expect(result.output.contains("0 MB  Gone-xyz  (was /nonexistent/Gone.xcodeproj)"), "\(result.output)")
+    #expect(result.output.contains("2 MB  1 clone(s) in \(home.path)/Library/Developer/XCTestDevices"), "\(result.output)")
+    #expect(FileManager.default.fileExists(atPath: clone.path))
+    #expect(FileManager.default.fileExists(atPath: gone.path))
 }

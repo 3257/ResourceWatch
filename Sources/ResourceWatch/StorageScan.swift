@@ -31,7 +31,8 @@ struct StorageTarget: Sendable {
         .init(name: "Parallel testing simulator clones", path: "Library/Developer/XCTestDevices",
               advice: "Xcode clones simulators here to run tests in parallel. The clones are needed only while tests run.\n"
                 + "The command deletes all clones. Xcode creates new ones for the next parallel test run.",
-              command: "xcrun simctl --set testing delete all"),
+              command: "xcrun simctl --set testing delete all",
+              script: .devClean("xctest", summary: "Shows how many clones there are and the space only they use, then asks before it deletes them all.")),
         .init(name: "Swift Package Manager cache", path: "Library/Caches/org.swift.swiftpm",
               advice: "Swift Package Manager keeps downloaded package repositories here.\n"
                 + "Deleting it is safe. Xcode downloads the packages again on the next resolve, which is slow for large projects.", trashable: true,
