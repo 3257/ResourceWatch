@@ -85,3 +85,11 @@ Added a compiled AppIcon asset catalog, declared CFBundleIconName alongside CFBu
 - Tests: an 8 MB `cp -c` clone inside a DerivedData folder reports 0 MB; a fake `XCTestDevices` clone reports 2 MB and still exists after `--apply` without a terminal; the catalog row maps to `--only xctest`. 52 tests passed and `swiftlint lint --strict` reported nothing.
 - `docs/xcode-disk-usage.md`: the `xcodebuild` options were checked against `xcodebuild -help` of Xcode 26.5, the `simctl` commands against `xcrun simctl help`, and the Tart commands against `tart prune --help`.
 - Not covered: `--apply --only xctest` with a terminal against real clones, and **Run script in Terminal** on the new row in the running app.
+
+## Homebrew release — 2026-10-25
+
+- `build.sh` takes the version from `VERSION` (default 0.4.0) and numbers the build by the commit count. The bundle ID is now `io.github.3257.ResourceWatch`.
+- `VERSION=0.4.0 bash build.sh` gave `CFBundleShortVersionString` 0.4.0, `CFBundleVersion` 21 and the new bundle ID. `codesign --verify --strict` and `plutil -lint` passed.
+- `.github/workflows/release.yml` runs on `v*.*.*` tags: tests, build, a version check, a `ditto` zip, then `gh release create` with the zip and its SHA-256. `actionlint` reported nothing.
+- The cask in a local `3257/tap` passed `brew style`. Against the local zip, `brew audit --cask --strict --online` reported only that livecheck found no version, because the repository has no tags yet.
+- Not covered: the workflow on GitHub, `brew install --cask` from the published tap, and the first launch through **Open Anyway**.
