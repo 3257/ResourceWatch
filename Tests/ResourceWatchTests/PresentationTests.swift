@@ -31,7 +31,7 @@ import AppKit
     let details = HealthSummary.warningDetails(m, settings: WatchSettings())
     #expect(details.contains("CPU 90% — above 85%"))
     #expect(details.contains("FixtureCompiler: 500% CPU (one core = 100%)"))
-    #expect(details.contains("FixtureCompiler: 9.0 GiB RAM"))
+    #expect(details.contains("FixtureCompiler: 9.0 GiB memory footprint"))
     #expect(details.contains("Critical memory pressure"))
     #expect(details.contains("Low storage: 10.0 GB free (1%)"))
     #expect(details.contains("Network: ↓ 0.0 / ↑ 30.0 MB/s"))

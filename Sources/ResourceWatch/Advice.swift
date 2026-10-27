@@ -93,26 +93,24 @@ enum Advisor {
 
     static func processAdvice(_ m: Metrics, settings: WatchSettings) -> [Recommendation] {
         groups(m.processSamples).filter { Double($0.memory) / gib >= settings.processMemoryGiB || $0.cpu >= settings.processCPUPercent }.map { group in
-            var title = String(format: "%@: %.1f GiB RAM", group.name, Double(group.memory) / gib)
+            var title = String(format: "%@: %.1f GiB memory footprint", group.name, Double(group.memory) / gib)
             if group.members.count > 1 { title += " in \(group.members.count) processes" }
             if group.cpu >= settings.processCPUPercent { title += String(format: " · %.0f%% CPU", group.cpu) }
             let tip = tip(for: group, samples: m.processSamples)
             var detail = tip.about
-            if m.memoryTotal > 0 {
-                detail.append(String(format: "Uses %.0f%% of your %.0f GiB RAM.", Double(group.memory) / Double(m.memoryTotal) * 100, Double(m.memoryTotal) / gib))
-            }
+            detail.append("Memory footprint includes compressed or swapped memory. It is not a share of physical RAM; check memory pressure for system health.")
             if group.members.count > 1, let largest = group.largest {
                 detail.append(String(format: "Largest: %@ — %.1f GiB, PID %d", largest.name, Double(largest.memory) / gib, largest.pid))
             }
             detail.append(tip.text)
-            if group.members.count > 1 { detail.append("Shared memory counts once per process, so the total is approximate.") }
             return Recommendation(id: "app-\(group.name)", title: title, detail: detail + commandLines(tip.actions), actions: tip.actions)
         }
     }
 
     static func processHint(identity: String, samples: [ProcessSample]) -> String? {
         guard let group = groups(samples).first(where: { $0.members.contains { $0.identity == identity } }) else { return nil }
-        let summary = group.members.count > 1 ? String(format: "%@ uses %.1f GiB in %d processes. ", group.name, Double(group.memory) / gib, group.members.count) : ""
+        let summary = group.members.count > 1
+            ? String(format: "%@ has a %.1f GiB memory footprint in %d processes. ", group.name, Double(group.memory) / gib, group.members.count) : ""
         return summary + tip(for: group, samples: samples).text
     }
 

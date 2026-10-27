@@ -45,19 +45,19 @@ private func sample(_ pid: Int32, _ parent: Int32, _ name: String, gib: Double, 
     let chrome = try #require(advice.first)
     #expect(advice.count == 1)
     #expect(chrome.detail.first == "Google Chrome runs each tab, extension and the GPU in a separate helper process.")
-    #expect(chrome.detail.contains("Uses 25% of your 36 GiB RAM."))
-    #expect(chrome.title == "Google Chrome: 9.0 GiB RAM in 3 processes")
+    #expect(!chrome.detail.contains { $0.contains("% of your") })
+    #expect(chrome.title == "Google Chrome: 9.0 GiB memory footprint in 3 processes")
     #expect(chrome.detail.contains("Largest: Google Chrome Helper (Renderer) — 5.0 GiB, PID 101"))
     #expect(chrome.detail.contains { $0.contains("Task Manager (Shift+Esc)") })
     #expect(chrome.actions == [.activate(100)])
-    #expect(Advisor.processHint(identity: "101:0:0", samples: m.processSamples)?.hasPrefix("Google Chrome uses 9.0 GiB in 3 processes.") == true)
+    #expect(Advisor.processHint(identity: "101:0:0", samples: m.processSamples)?.hasPrefix("Google Chrome has a 9.0 GiB memory footprint in 3 processes.") == true)
 }
 
 @Test func busyGroupsReportCPUAndCopyableCommands() {
     var m = Metrics(cpu: 10, pressure: 1, swap: 0, free: 0, total: 0, processes: "")
     m.processSamples = [sample(50, 1, "launchd_sim", gib: 0.1, cpu: 90), sample(51, 50, "SpringBoard", gib: 0.1, cpu: 90)]
     let advice = Advisor.processAdvice(m, settings: WatchSettings())
-    #expect(advice.map(\.title) == ["Running simulators: 0.2 GiB RAM in 2 processes · 180% CPU"])
+    #expect(advice.map(\.title) == ["Running simulators: 0.2 GiB memory footprint in 2 processes · 180% CPU"])
     #expect(advice.first?.detail.contains("1 simulator is running.") == true)
     #expect(advice.first?.actions == [.copy("xcrun simctl shutdown all")])
     #expect(advice.first?.detail.last == "Command: xcrun simctl shutdown all")
@@ -69,7 +69,7 @@ private func sample(_ pid: Int32, _ parent: Int32, _ name: String, gib: Double, 
     var m = Metrics(cpu: 10, pressure: 1, swap: 0, free: 0, total: 0, processes: "")
     m.processSamples = [sample(41560, 1, "com.apple.Virtualization.Virtua", gib: 22.8), sample(41557, 1, "tart", gib: 0.1), sample(790, 1, "com.docker.vmnetd", gib: 0)]
     let vm = try #require(Advisor.processAdvice(m, settings: WatchSettings()).first)
-    #expect(vm.title == "Virtual machines: 22.8 GiB RAM")
+    #expect(vm.title == "Virtual machines: 22.8 GiB memory footprint")
     #expect(vm.detail.contains("Virtual machine apps that run now: Tart."))
     #expect(!vm.detail.contains { $0.contains("Docker") })
     #expect(vm.actions == [.copy("tart list")])
@@ -77,4 +77,18 @@ private func sample(_ pid: Int32, _ parent: Int32, _ name: String, gib: Double, 
     let unknown = try #require(Advisor.processAdvice(m, settings: WatchSettings()).first)
     #expect(unknown.detail.contains { $0.hasPrefix("No known virtual machine app runs now") })
     #expect(unknown.actions == [.openActivityMonitor])
+}
+
+@Test func simulatorFootprintsAbovePhysicalRAMNeverClaimAPhysicalRAMShare() throws {
+    var m = Metrics(cpu: 16, pressure: 1, swap: 0, free: 0, total: 0, processes: "")
+    m.memoryTotal = 32 << 30
+    m.memoryUsed = 18 << 30
+    m.processSamples = [sample(50, 1, "launchd_sim", gib: 0.1), sample(51, 50, "SpringBoard", gib: 19.8),
+                        sample(60, 1, "launchd_sim", gib: 0.1), sample(61, 60, "SpringBoard", gib: 19.8)]
+    let advice = try #require(Advisor.processAdvice(m, settings: WatchSettings()).first)
+    #expect(advice.title == "Running simulators: 39.8 GiB memory footprint in 4 processes")
+    #expect(advice.detail.contains("2 simulators are running."))
+    #expect(advice.detail.contains { $0.contains("includes compressed or swapped memory") })
+    #expect(!advice.detail.contains { $0.contains("% of your") || $0.contains("Shared memory counts") })
+    #expect(advice.actions == [.copy("xcrun simctl shutdown all")])
 }

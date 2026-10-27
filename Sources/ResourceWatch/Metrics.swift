@@ -26,10 +26,16 @@ struct ProcessSample: Equatable, Sendable {
 }
 
 final class Sampler {
+    private let memoryFootprint: (Int32) -> UInt64?
     private var previous: [UInt64]?
     private var processTimes: [String: UInt64] = [:]
     private var lastTime: TimeInterval?
     private var networkTracker = NetworkTracker()
+
+    init(memoryFootprint: @escaping (Int32) -> UInt64? = processMemoryFootprint) {
+        self.memoryFootprint = memoryFootprint
+    }
+
     func sample() throws -> Metrics {
         let host = mach_host_self()
         defer { mach_port_deallocate(mach_task_self_, host) }
@@ -90,7 +96,8 @@ final class Sampler {
         for pid in pids.prefix(max(0, min(Int(number), pids.count))) where pid > 0 {
             var all = proc_taskallinfo()
             let size = Int32(MemoryLayout<proc_taskallinfo>.size)
-            guard proc_pidinfo(pid, PROC_PIDTASKALLINFO, 0, &all, size) == size else { continue }
+            guard proc_pidinfo(pid, PROC_PIDTASKALLINFO, 0, &all, size) == size,
+                  let footprint = memoryFootprint(pid) else { continue }
             let identity = "\(pid):\(all.pbsd.pbi_start_tvsec):\(all.pbsd.pbi_start_tvusec)"
             let time = all.ptinfo.pti_total_user + all.ptinfo.pti_total_system
             next[identity] = time
@@ -102,11 +109,22 @@ final class Sampler {
             _ = proc_name(pid, &name, UInt32(name.count))
             let decodedName = String(decoding: name.prefix(while: { $0 != 0 }).map { UInt8(bitPattern: $0) }, as: UTF8.self)
             samples.append(ProcessSample(identity: identity, name: decodedName.isEmpty ? "PID \(pid)" : decodedName, cpu: usage,
-                                         memory: all.ptinfo.pti_resident_size, pid: pid, parentPID: Int32(bitPattern: all.pbsd.pbi_ppid)))
+                                         memory: footprint, pid: pid, parentPID: Int32(bitPattern: all.pbsd.pbi_ppid)))
         }
         processTimes = next
         return samples
     }
+}
+
+/// Kernel-charged footprint includes compressed memory, unlike RSS, which repeats shared clean pages across processes.
+func processMemoryFootprint(_ pid: Int32) -> UInt64? {
+    var usage = rusage_info_v0()
+    let result = withUnsafeMutablePointer(to: &usage) { pointer in
+        pointer.withMemoryRebound(to: rusage_info_t?.self, capacity: 1) {
+            proc_pid_rusage(pid, RUSAGE_INFO_V0, $0)
+        }
+    }
+    return result == 0 ? usage.ri_phys_footprint : nil
 }
 
 final class SamplingWorker: @unchecked Sendable {

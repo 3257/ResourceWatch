@@ -42,7 +42,7 @@ struct AlertEngine {
             check(cpuKey, p.cpu >= settings.processCPUPercent, settings.sustainedSeconds,
                   "\(p.name) is using sustained CPU", "\(String(format: "%.0f", p.cpu))% CPU (100% = one core). PID \(p.identity.split(separator: ":")[0]).")
             check(memoryKey, Double(p.memory) / gib >= settings.processMemoryGiB, settings.sustainedSeconds,
-                  "\(p.name) is using substantial memory", "Resident memory: \(String(format: "%.1f", Double(p.memory) / gib)) GiB. Check Activity Monitor before taking action.")
+                  "\(p.name) is using substantial memory", "Memory footprint: \(String(format: "%.1f", Double(p.memory) / gib)) GiB. Check Activity Monitor before taking action.")
         }
         policy.retain(keys)
         check("cpu", m.cpu >= settings.cpuPercent, settings.sustainedSeconds,
