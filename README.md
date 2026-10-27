@@ -16,7 +16,7 @@ Free and open source under the [MIT license](LICENSE). No account, API key, subs
 
 ### Suggestions
 
-<img src="docs/screenshots/suggestions-menu.png" width="720" alt="ResourceWatch menu with a Suggestions section; the Running simulators suggestion is open and explains the cause, the RAM share, the largest process, what to do, and offers Copy command and Ask AI in Terminal">
+<img src="docs/screenshots/suggestions-menu.png" width="720" alt="ResourceWatch menu with a Suggestions section; the Running simulators suggestion is open and explains the cause, the largest process, what to do, and offers Copy command and Ask AI in Terminal">
 
 ### Storage cleanup and growth
 
@@ -31,6 +31,8 @@ Free and open source under the [MIT license](LICENSE). No account, API key, subs
 <img src="docs/screenshots/settings.png" width="360" alt="ResourceWatch Settings with sliders for CPU, process memory, free storage, storage growth, network traffic, sustained duration and cooldown">
 
 Actual app captures with example live readings and selected thresholds. The suggestion captures used a 5 GiB process-memory threshold, and a 1.2 GB demo file in `~/ResourceWatchDemo` to show folder growth. Click a metric tile for details; adjust the sliders to suit your Mac.
+
+The suggestion screenshots predate the memory-footprint correction: current builds label process totals as memory footprints and omit the physical RAM percentage.
 
 ## Install and run
 
@@ -74,7 +76,7 @@ After pulling updates, run `bash build.sh` again and replace your installed copy
 ## Features
 
 - Menu bar pulse icon with a red status dot when a metric passes its threshold. Notifications wait for a sustained duration, so short spikes stay quiet.
-- Alerts for CPU, process CPU and memory, memory pressure, low free storage, fast storage growth and sustained network traffic. All thresholds have sliders.
+- Alerts for CPU, process CPU and memory footprint, memory pressure, low free storage, fast storage growth and sustained network traffic. All thresholds have sliders. Process footprints avoid repeated shared clean pages and are shown separately from system RAM used, without claiming a percentage of physical RAM.
 - **Suggestions** that name the app or folder behind a warning, with actions: show in Finder, copy a command, move to Trash after a confirmation, run a bundled cleanup script, or ask an AI coding CLI.
 - **Storage cleanup** that lists developer caches, Xcode data, VM disks and old git worktrees, and **Growing now**, which names the folders that grew in the last hour.
 - A floating mini panel with CPU, memory, network and storage tiles.
@@ -99,6 +101,6 @@ Code is in `Sources/ResourceWatch`; regression tests are in `Tests/ResourceWatch
 
 ## Privacy
 
-Metrics stay on the Mac. There is no telemetry, backend, packet capture, destination inspection or credential access. Process inspection collects executable names, PIDs, CPU counters and resident sizes, not command arguments or environments. Notifications can include executable names; their visibility follows your macOS notification settings. Settings are stored in local UserDefaults; short metric history and recent alerts live in memory. No credentials, raw diagnostic logs, build products or machine-specific configuration are needed in this repository. Documentation screenshots show only app windows with aggregate metrics and settings, without desktop content or process details.
+Metrics stay on the Mac. There is no telemetry, backend, packet capture, destination inspection or credential access. Process inspection collects executable names, PIDs, CPU counters and memory footprints, not command arguments or environments. Notifications can include executable names; their visibility follows your macOS notification settings. Settings are stored in local UserDefaults; short metric history and recent alerts live in memory. No credentials, raw diagnostic logs, build products or machine-specific configuration are needed in this repository. Documentation screenshots show only app windows with aggregate metrics and settings, without desktop content or process details.
 
 Implementation references: [Apple memory pressure sysctl conversion](https://github.com/apple-oss-distributions/xnu/blob/main/bsd/kern/kern_memorystatus_notify.c), [login startup](https://developer.apple.com/documentation/servicemanagement/smappservice/mainapp), [notification presentation](https://developer.apple.com/documentation/usernotifications/unusernotificationcenterdelegate/usernotificationcenter(_:willpresent:withcompletionhandler:)).

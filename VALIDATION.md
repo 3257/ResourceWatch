@@ -1,5 +1,13 @@
 # Local validation — 2026-10-20
 
+## Process memory footprint correction — 2026-10-27
+
+- Replaced process RSS with `proc_pid_rusage(RUSAGE_INFO_V0).ri_phys_footprint` for thresholds, grouped suggestions, largest-process selection and top-process readings. Processes whose footprint cannot be read are omitted rather than mixing RSS and footprint.
+- Removed the physical RAM percentage and repeated-shared-memory disclaimer. Footprint labels explain compressed/swapped memory and direct users to memory pressure for system health. The system RAM tile keeps its existing host VM calculation.
+- Regression tests cover the reported 39.8 GiB / 32 GiB scenario, two simulator roots, retained actions, injected footprint values instead of RSS, unavailable reads, and a native footprint read of the test process.
+- `swift test`: 59 tests passed. `swiftlint lint --strict`: zero violations. `bash build.sh`, `codesign --verify --strict dist/ResourceWatch.app` and `git diff --check` passed on Apple Silicon with Xcode 27.2 RC.
+- The running installed app was not replaced, and updated suggestion pixels were not inspected. Existing suggestion screenshots are historical; the README identifies their older memory labels.
+
 ## Requirements and evidence
 
 | Requirement | Evidence |

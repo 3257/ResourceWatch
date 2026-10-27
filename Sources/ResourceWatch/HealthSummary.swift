@@ -10,7 +10,7 @@ enum HealthSummary {
         for p in busy.prefix(2) { lines.append(String(format: "%@: %.0f%% CPU (one core = 100%%)", p.name, p.cpu)) }
         if busy.count > 2 { lines.append("\(busy.count - 2) more processes above CPU threshold") }
         let large = m.processSamples.filter { Double($0.memory) / Double(1 << 30) >= settings.processMemoryGiB }.sorted { $0.memory > $1.memory }
-        for p in large.prefix(2) { lines.append(String(format: "%@: %.1f GiB RAM", p.name, Double(p.memory) / Double(1 << 30))) }
+        for p in large.prefix(2) { lines.append(String(format: "%@: %.1f GiB memory footprint", p.name, Double(p.memory) / Double(1 << 30))) }
         if large.count > 2 { lines.append("\(large.count - 2) more processes above memory threshold") }
         if active.contains("Low storage") { lines.append(String(format: "Low storage: %.1f GB free (%.0f%%)", Double(m.free) / 1e9, Double(m.free) / Double(m.total) * 100)) }
         if active.contains("Heavy network traffic") { lines.append(String(format: "Network: ↓ %.1f / ↑ %.1f MB/s", m.network.download / 1e6, m.network.upload / 1e6)) }

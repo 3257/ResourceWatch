@@ -8,7 +8,7 @@ When a warning is active, **Current warnings** appears at the top of the menu wi
 
 ## Suggestions and storage cleanup
 
-**Suggestions** appears below the warnings and states what to do. ResourceWatch groups helper processes under their app, so a warning names the app and not one helper. For example: `Google Chrome: 11.2 GiB RAM in 34 processes`. Each suggestion opens a submenu with the largest process, a tip and one or more actions:
+**Suggestions** appears below the warnings and states what to do. ResourceWatch groups helper processes under their app, so a warning names the app and not one helper. For example: `Google Chrome: 11.2 GiB memory footprint in 34 processes`. Each suggestion opens a submenu with the largest process, a tip and one or more actions:
 
 - **Bring app to front**, **Open Activity Monitor**, **Show in Finder**.
 - **Move to Trash…**: offered only for folders that their tools recreate, such as DerivedData, DeviceSupport and package-manager caches, and for orphaned DerivedData folders. A dialog names every item first, and **Cancel** is the default button. Archives, simulators, worktrees, backups, Downloads and growing folders are never offered; they need their own tool or your own choice. In the mini panel, the menu of each cleanup item and each growing folder offers the same actions as the menu bar, including **Run script in Terminal** and **Ask AI in Terminal**.
@@ -30,7 +30,7 @@ Without a terminal, every answer is No. ResourceWatch itself still deletes nothi
 
 **Ask AI in Terminal** (menu) or **Ask AI** (mini panel) sends a suggestion to an AI coding CLI. ResourceWatch detects Claude Code (`claude`), Codex (`codex`), OpenCode (`opencode --prompt`) and Gemini CLI (`gemini -i`) through your login shell's `PATH` at launch, and lists only the installed ones. The app opens a `.command` file with your default terminal app. The agent starts an interactive session in your login shell, with the suggestion, your Mac's memory and storage readings, and a rule to ask before it deletes files or stops processes. Worktree suggestions start in the worktree folder; other suggestions start in your home folder. The terminal opens a new window, or a new tab when **System Settings → Desktop & Dock → Prefer tabs when opening documents** is **Always**. No Automation or Accessibility permission is needed.
 
-ResourceWatch never quits apps, never empties the Trash, and moves files to the Trash only after you confirm. Summed resident memory counts shared pages once per process, so app totals are approximate. macOS does not tell other apps which browser tab owns a process; for Chromium browsers the tip points to the browser's Task Manager (Shift+Esc).
+ResourceWatch never quits apps, never empties the Trash, and moves files to the Trash only after you confirm. App totals sum the kernel-charged process memory footprints (`proc_pid_rusage`, `ri_phys_footprint`), avoiding the repeated shared clean pages in summed resident sizes. Footprints include compressed or swapped memory at its original size, so they are not a share of physical RAM and are not directly comparable with the dashboard's system RAM used. Suggestions never present them as a RAM percentage. Check memory pressure and swap to judge system health. macOS does not tell other apps which browser tab owns a process; for Chromium browsers the tip points to the browser's Task Manager (Shift+Esc).
 
 The **Storage cleanup** submenu lists items of 1 GB or more, largest first:
 
@@ -59,7 +59,7 @@ Samples every ten seconds, off the UI thread:
 
 - All-core CPU above 85% for 60 seconds.
 - Individual process above 150% CPU (one and a half cores) for 60 seconds, even if overall CPU is low.
-- Individual process above 8 GiB resident memory for 60 seconds.
+- Individual process above 8 GiB memory footprint for 60 seconds.
 - macOS warning/critical memory pressure for 30 seconds. Swap is displayed separately; swap alone does not imply a problem.
 - Home volume below 20 GB free or 10% free for 30 seconds.
 - More than 10 GB lost over a rolling hour, after at least five minutes of observation.
@@ -67,7 +67,7 @@ Samples every ten seconds, off the UI thread:
 
 Alerts repeat every 15 minutes while a condition persists. Recovery resets the sustained window. The menu retains the latest 30 alerts in memory. Disk history resets on restart and measures free-space change; **Growing now** attributes growth to folders. The sampler never scans folders; only storage cleanup scans measure folder sizes. APFS shared capacity and snapshots can affect free space.
 
-Top processes show PID, executable name, CPU since the previous sample and RSS. CPU counters use the machine's Mach timebase; 100% means one core. RSS is not Activity Monitor's memory footprint. Some protected processes cannot be inspected and are omitted. Command arguments and environments are never collected. Sampling uses native APIs on a serial utility queue, with no subprocess per tick.
+Top processes show PID, executable name, CPU since the previous sample and memory footprint. CPU counters use the machine's Mach timebase; 100% means one core. Processes whose task information or footprint cannot be read are omitted; resident sizes are never substituted for footprints. Command arguments and environments are never collected. Sampling uses native APIs on a serial utility queue, with no subprocess per tick.
 
 The compact native menu shows CPU, memory pressure, swap and storage. While a menu is open, its values stay fixed so submenus do not close under the pointer; the latest readings appear when it closes, and notifications are never delayed. **Top processes** and **Recent alerts** expand into submenus. Open **Settings…** to adjust thresholds, CPU/process duration and cooldown with sliders; selected values remain visible beside their labels. **Launch at login** is a separate toggle. Preferences persist locally. Memory pressure and low space use a fixed 30-second window. Login startup is opt-in through Apple's Service Management API; the toggle reads the OS state. Keep the app at a stable path before enabling it. macOS may require approval in Login Items settings. Quitting stops monitoring until the next launch.
 

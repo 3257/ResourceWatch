@@ -1,6 +1,27 @@
 import Testing
 import Foundation
 @testable import ResourceWatch
+
+@Test func samplerUsesFootprintInsteadOfResidentSize() throws {
+    let footprint: UInt64 = 123456
+    let m = try Sampler(memoryFootprint: { _ in footprint }).sample()
+    let ownProcess = try #require(m.processSamples.first { $0.pid == ProcessInfo.processInfo.processIdentifier })
+    #expect(ownProcess.memory == footprint)
+    #expect(m.processSamples.allSatisfy { $0.memory == footprint })
+}
+
+@Test func unavailableFootprintsDoNotFallBackToResidentSize() throws {
+    let m = try Sampler(memoryFootprint: { _ in nil }).sample()
+    #expect(m.processSamples.isEmpty)
+    #expect(m.memoryUsed > 0)
+}
+
+@Test func nativeFootprintCanReadOwnProcessAndRejectsMissingProcess() throws {
+    let footprint = try #require(processMemoryFootprint(ProcessInfo.processInfo.processIdentifier))
+    #expect(footprint > 0)
+    #expect(processMemoryFootprint(-1) == nil)
+}
+
 @Test func nativeProcessCPUMeasuresOneBusyCore() throws {
     let child = Process()
     child.executableURL = URL(fileURLWithPath: "/usr/bin/yes")
